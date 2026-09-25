@@ -16,6 +16,8 @@ const whatsappRoutes = require('./routes/whatsapp');
 const notificationRoutes = require('./routes/notification');
 const tagsRoutes = require('./routes/tags');
 const leadersRoutes = require('./routes/leaders');
+const complainRoutes = require('./routes/complain');
+const laundryRoutes = require('./routes/laundry');
 
 const app = express();
 app.use(cors({
@@ -150,6 +152,65 @@ const pool = require('./config/db');
       `);
     } catch(e) {}
 
+    // Complains Table Migration
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS complains (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        room VARCHAR(20) DEFAULT NULL,
+        bank_code VARCHAR(50) DEFAULT NULL,
+        compDesc TEXT,
+        compType VARCHAR(50) DEFAULT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        review TEXT,
+        response TEXT,
+        resolveTime DATETIME DEFAULT NULL,
+        reviewTime DATETIME DEFAULT NULL,
+        submitTime DATETIME DEFAULT CURRENT_TIMESTAMP,
+        images INT DEFAULT 0
+      )
+    `);
+
+    // Laundry Table Migration
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS laundry (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        bank_code VARCHAR(50) DEFAULT NULL,
+        pants INT DEFAULT 0,
+        pressPants INT DEFAULT 0,
+        shirts INT DEFAULT 0,
+        pressShirts INT DEFAULT 0,
+        tShirts INT DEFAULT 0,
+        pressTShirts INT DEFAULT 0,
+        towels INT DEFAULT 0,
+        pressTowels INT DEFAULT 0,
+        others INT DEFAULT 0,
+        pressOthers INT DEFAULT 0,
+        blanket INT DEFAULT 0,
+        jacket INT DEFAULT 0,
+        bedSheet INT DEFAULT 0,
+        status VARCHAR(30) DEFAULT 'pending',
+        submitTime DATETIME DEFAULT CURRENT_TIMESTAMP,
+        acceptTime DATETIME DEFAULT NULL,
+        washTime DATETIME DEFAULT NULL,
+        receiveTime DATETIME DEFAULT NULL,
+        washPrice INT DEFAULT 4,
+        pressPrice INT DEFAULT 4,
+        blanketPrice INT DEFAULT 20,
+        jacketPrice INT DEFAULT 20,
+        bedSheetPrice INT DEFAULT 8
+      )
+    `);
+
+    // Laundry Recharge Table Migration
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS laundryrecharge (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        bank_code VARCHAR(50) DEFAULT NULL,
+        amount INT DEFAULT 0,
+        time DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     console.log('Database schema auto-migration successful.');
   } catch (err) {
     console.error(`Error migrating schema: ${err.message}`);
@@ -231,6 +292,8 @@ app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/notification', notificationRoutes);
 app.use('/api/tags', tagsRoutes);
 app.use('/api/leaders', leadersRoutes);
+app.use('/api/complain', complainRoutes);
+app.use('/api/laundry', laundryRoutes);
 
 // Fallback error handler
 app.use((err, req, res, next) => {
