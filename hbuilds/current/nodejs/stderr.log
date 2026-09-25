@@ -1,0 +1,28 @@
+node:internal/modules/cjs/loader:1368
+  throw err;
+  ^
+
+Error: Cannot find module '../utils/time'
+Require stack:
+- /home/u562700164/domains/attendent.hpys.in/hbuilds/versions/01a0d966-0190-72a6-93b7-a53ccb26d13f/nodejs/services/cron.js
+- /home/u562700164/domains/attendent.hpys.in/hbuilds/versions/01a0d966-0190-72a6-93b7-a53ccb26d13f/nodejs/server.js
+- /usr/local/lsws/fcgi-bin/lsnode.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1365:15)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1021:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1026:22)
+    at Module._load (node:internal/modules/cjs/loader:1175:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:235:24)
+    at Module.require (node:internal/modules/cjs/loader:1445:12)
+    at require (node:internal/modules/helpers:135:16)
+    at Object.<anonymous> (/home/u562700164/domains/attendent.hpys.in/hbuilds/versions/01a0d966-0190-72a6-93b7-a53ccb26d13f/nodejs/services/cron.js:4:27)
+    at Module._compile (node:internal/modules/cjs/loader:1688:14) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/u562700164/domains/attendent.hpys.in/hbuilds/versions/01a0d966-0190-72a6-93b7-a53ccb26d13f/nodejs/services/cron.js',
+    '/home/u562700164/domains/attendent.hpys.in/hbuilds/versions/01a0d966-0190-72a6-93b7-a53ccb26d13f/nodejs/server.js',
+    '/usr/local/lsws/fcgi-bin/lsnode.js'
+  ]
+}
+
+Node.js v22.18.0
