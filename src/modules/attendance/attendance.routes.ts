@@ -20,7 +20,7 @@ router.get('/', requireAuth, async (req, res) => {
     const { type, startDate, endDate, from, to, limit = 50, offset = 0 } = req.query;
 
     let query = `
-      SELECT r.id, r.student_id, r.bank_code, r.student_name, r.timestamp, r.created_at,
+      SELECT r.id, r.student_id, r.bank_code, r.student_name, r.marked_at,
              ses.session_date, ses.session_type, ses.starts_at, ses.ends_at
       FROM attendance_records r
       LEFT JOIN attendance_sessions ses ON r.session_id = ses.id
@@ -37,15 +37,15 @@ router.get('/', requireAuth, async (req, res) => {
     }
     const start = startDate || from;
     if (start) {
-      query += ' AND (ses.session_date >= ? OR DATE(r.created_at) >= ?)';
+      query += ' AND (ses.session_date >= ? OR DATE(r.marked_at) >= ?)';
       params.push(start, start);
     }
     const end = endDate || to;
     if (end) {
-      query += ' AND (ses.session_date <= ? OR DATE(r.created_at) <= ?)';
+      query += ' AND (ses.session_date <= ? OR DATE(r.marked_at) <= ?)';
       params.push(end, end);
     }
-    query += ' ORDER BY COALESCE(r.timestamp, r.created_at) DESC LIMIT ? OFFSET ?';
+    query += ' ORDER BY r.marked_at DESC LIMIT ? OFFSET ?';
     params.push(parseInt(limit, 10) || 50, parseInt(offset, 10) || 0);
 
     const [rows] = await pool.query(query, params);
@@ -54,8 +54,8 @@ router.get('/', requireAuth, async (req, res) => {
       aadhar: r.bank_code,
       studentAadhar: r.bank_code,
       studentName: r.student_name,
-      date: r.session_date || r.created_at,
-      time: r.timestamp || r.created_at,
+      date: r.session_date || r.marked_at,
+      time: r.marked_at,
       type: r.session_type || 'night',
       viaCode: true
     }));
@@ -92,7 +92,7 @@ router.post('/', requireAuth, async (req, res) => {
     }
 
     const [insertResult] = await pool.query(
-      'INSERT INTO attendance_records (session_id, bank_code, student_name, student_id, floor_id, timestamp, created_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())',
+      'INSERT INTO attendance_records (session_id, bank_code, student_name, student_id, floor_id, marked_at) VALUES (?, ?, ?, ?, ?, NOW())',
       [sessionId, bankCode, studentName, studentId, floorId]
     );
 
