@@ -119,6 +119,66 @@ router.get('/', requireAuth, async (req: Request, res: Response): Promise<any> =
   }
 });
 
+// GET /api/laundry/balance and /api/laundry/balance/:studentId
+router.get(['/balance', '/balance/:studentId'], requireAuth, async (req: Request, res: Response): Promise<any> => {
+  try {
+    let targetStudentId = req.user?.student_id || req.student?.id;
+    if (req.params.studentId) {
+      targetStudentId = parseInt(req.params.studentId as string, 10);
+    } else if (req.query.aadhar || req.query.student_id) {
+      const q = String(req.query.aadhar || req.query.student_id);
+      const [byCode]: any = await pool.query('SELECT id FROM students WHERE student_code = ? OR id = ? LIMIT 1', [q, isNaN(Number(q)) ? 0 : Number(q)]);
+      if (byCode.length > 0) targetStudentId = byCode[0].id;
+    }
+
+    if (!targetStudentId) {
+      return res.status(400).json({ success: false, message: 'Valid student ID is required' });
+    }
+
+    const [students]: any = await pool.query('SELECT id, student_code, name FROM students WHERE id = ?', [targetStudentId]);
+    const studentCode = students[0]?.student_code || String(targetStudentId);
+
+    // 1. Total Recharges
+    const [rechargeRows]: any = await pool.query(
+      'SELECT COALESCE(SUM(amount), 0) AS total_recharged FROM laundryrecharge WHERE student_id = ?',
+      [targetStudentId]
+    );
+    const totalRecharged = parseFloat(rechargeRows[0]?.total_recharged || 0);
+
+    // 2. Total Delivered Laundry Spend
+    const [tickets]: any = await pool.query(
+      'SELECT * FROM laundry WHERE student_id = ? AND status = "received"',
+      [targetStudentId]
+    );
+    const totalSpent = tickets.reduce((acc: number, t: any) => acc + computeLaundryTotal(t), 0);
+    const currentBalance = totalRecharged - totalSpent;
+
+    return res.json({
+      success: true,
+      data: {
+        student_id: targetStudentId,
+        studentAadhar: studentCode,
+        aadhar: studentCode,
+        total_recharged: totalRecharged,
+        totalRecharges: totalRecharged,
+        total_spent: totalSpent,
+        totalSpend: totalSpent,
+        current_balance: currentBalance,
+        balance: {
+          studentAadhar: studentCode,
+          aadhar: studentCode,
+          totalRecharges: totalRecharged,
+          totalSpend: totalSpent,
+          balance: currentBalance
+        }
+      }
+    });
+  } catch (err: any) {
+    console.error('Error fetching balance:', err);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
 // GET /api/laundry/:id
 router.get('/:id', requireAuth, async (req: Request, res: Response): Promise<any> => {
   try {
@@ -228,43 +288,5 @@ router.post('/recharge', requireAuth, requireRole('laundry-man', 'platform-admin
   }
 });
 
-// GET /api/laundry/balance/:studentId (Balance inquiry)
-router.get('/balance/:studentId', requireAuth, async (req: Request, res: Response): Promise<any> => {
-  try {
-    const targetStudentId = parseInt(req.params.studentId as string, 10);
-    const isStaff = req.roles?.some(r => ['laundry-man', 'platform-admin'].includes(r));
-    if (!isStaff && targetStudentId !== (req.user?.student_id || req.student?.id)) {
-      return res.status(403).json({ success: false, message: 'Forbidden' });
-    }
-
-    // 1. Total Recharges
-    const [rechargeRows]: any = await pool.query(
-      'SELECT COALESCE(SUM(amount), 0) AS total_recharged FROM laundryrecharge WHERE student_id = ?',
-      [targetStudentId]
-    );
-    const totalRecharged = parseFloat(rechargeRows[0].total_recharged);
-
-    // 2. Total Delivered Laundry Spend
-    const [tickets]: any = await pool.query(
-      'SELECT * FROM laundry WHERE student_id = ? AND status = "received"',
-      [targetStudentId]
-    );
-    const totalSpent = tickets.reduce((acc: number, t: any) => acc + computeLaundryTotal(t), 0);
-    const currentBalance = totalRecharged - totalSpent;
-
-    return res.json({
-      success: true,
-      data: {
-        student_id: targetStudentId,
-        total_recharged: totalRecharged,
-        total_spent: totalSpent,
-        current_balance: currentBalance
-      }
-    });
-  } catch (err: any) {
-    console.error('Error fetching balance:', err);
-    return res.status(500).json({ success: false, message: 'Server error' });
-  }
-});
-
 export default router;
+

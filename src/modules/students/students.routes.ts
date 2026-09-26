@@ -1,9 +1,105 @@
 import { Router, Request, Response } from 'express';
 import https from 'https';
 import pool from '../../config/db';
-import { verifyAdminOrFloorLeader } from '../../middleware/auth';
+import { requireAuth, verifyAdminOrFloorLeader } from '../../middleware/auth';
 
 const router = Router();
+
+// GET /api/students/me or /api/students/:id (Student Profile for Mobile App)
+router.get(['/me', '/:id'], requireAuth, async (req: Request, res: Response): Promise<any> => {
+  try {
+    let studentId = req.user?.student_id || req.student?.id;
+    const requested = req.params.id;
+
+    if (requested && requested !== 'me') {
+      const isStaffOrLeader = req.roles?.some(r => ['platform-admin', 'leader', 'wing-leader'].includes(r));
+      const [byLookup]: any = await pool.query(
+        'SELECT * FROM students WHERE id = ? OR student_code = ? LIMIT 1',
+        [isNaN(Number(requested)) ? 0 : Number(requested), requested]
+      );
+      if (byLookup.length > 0) {
+        if (!isStaffOrLeader && byLookup[0].id !== studentId) {
+          return res.status(403).json({ success: false, message: 'Forbidden' });
+        }
+        studentId = byLookup[0].id;
+      }
+    }
+
+    if (!studentId) {
+      return res.status(400).json({ success: false, message: 'Student ID not resolved' });
+    }
+
+    const [rows]: any = await pool.query('SELECT * FROM students WHERE id = ?', [studentId]);
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Student profile not found' });
+    }
+
+    const s = rows[0];
+    const nameParts = (s.name || '').trim().split(/\s+/);
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : '';
+    const middleName = nameParts.length > 2 ? nameParts.slice(1, -1).join(' ') : '';
+
+    const profileData = {
+      aadhar: s.student_code,
+      bankCode: s.student_code,
+      firstName,
+      middleName,
+      lastName,
+      fullName: s.name,
+      phone: s.phone_number || '',
+      whatsappNumber: s.phone_number || '',
+      email: s.email || '',
+      room: s.room_number || '',
+      floor_id: s.floor_id,
+      fatherPhone: s.father_phone || '',
+      motherPhone: s.mother_phone || '',
+      status: s.is_active ? 'active' : 'left'
+    };
+
+    return res.json({
+      success: true,
+      data: {
+        student: profileData
+      }
+    });
+  } catch (err: any) {
+    console.error('Error fetching student profile:', err);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// PATCH /api/students/:id (Update Profile)
+router.patch(['/me', '/:id'], requireAuth, async (req: Request, res: Response): Promise<any> => {
+  try {
+    let studentId = req.user?.student_id || req.student?.id;
+    const requested = req.params.id;
+    if (requested && requested !== 'me') {
+      const [byLookup]: any = await pool.query(
+        'SELECT id FROM students WHERE id = ? OR student_code = ? LIMIT 1',
+        [isNaN(Number(requested)) ? 0 : Number(requested), requested]
+      );
+      if (byLookup.length > 0) studentId = byLookup[0].id;
+    }
+
+    const { whatsAppNumber, phone, fatherPhone, motherPhone } = req.body;
+    await pool.query(
+      `UPDATE students 
+       SET phone_number = COALESCE(?, phone_number),
+           father_phone = COALESCE(?, father_phone),
+           mother_phone = COALESCE(?, mother_phone)
+       WHERE id = ?`,
+      [phone || whatsAppNumber || null, fatherPhone || null, motherPhone || null, studentId]
+    );
+
+    const [rows]: any = await pool.query('SELECT * FROM students WHERE id = ?', [studentId]);
+    return res.json({ success: true, data: { student: rows[0] } });
+  } catch (err: any) {
+    console.error('Error updating student profile:', err);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
 router.use(verifyAdminOrFloorLeader);
 
 // GET /api/students/floor-targets

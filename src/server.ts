@@ -18,6 +18,7 @@ import whatsappService from './services/whatsapp';
 import authRoutes from './modules/auth/auth.routes';
 import complainRoutes from './modules/complain/complain.routes';
 import laundryRoutes from './modules/laundry/laundry.routes';
+import feesRoutes from './modules/fees/fees.routes';
 import delegationRoutes from './modules/delegation/delegation.routes';
 import attendanceRoutes from './modules/attendance/attendance.routes';
 import adminRoutes from './modules/admin/admin.routes';
@@ -76,7 +77,9 @@ const mountRoute = (prefix: string, handler: any) => {
 
 mountRoute('auth', authRoutes);
 mountRoute('complain', complainRoutes);
+mountRoute('complains', complainRoutes);
 mountRoute('laundry', laundryRoutes);
+mountRoute('fees', feesRoutes);
 mountRoute('delegation', delegationRoutes);
 mountRoute('attendance', attendanceRoutes);
 mountRoute('admin', adminRoutes);
