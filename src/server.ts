@@ -31,6 +31,7 @@ import notificationRoutes from './modules/notification/notification.routes';
 import tagsRoutes from './modules/tags/tags.routes';
 import leadersRoutes from './modules/leaders/leaders.routes';
 import rebindRoutes from './modules/rebind/rebind.routes';
+import screentimeRoutes from './modules/screentime/screentime.routes';
 
 const app = express();
 
@@ -92,6 +93,7 @@ mountRoute('notification', notificationRoutes);
 mountRoute('tags', tagsRoutes);
 mountRoute('leaders', leadersRoutes);
 mountRoute('rebind', rebindRoutes);
+mountRoute('screen-time', screentimeRoutes);
 
 // Legacy utility endpoints for backwards compatibility
 app.get(['/api/migrate-room', '/migrate-room'], async (_req: Request, res: Response) => {

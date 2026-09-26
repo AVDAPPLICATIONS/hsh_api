@@ -325,6 +325,89 @@ export async function runMigrations(): Promise<void> {
       }
     } catch (e) {}
 
+    // ==========================================
+    // PARENTAL CONTROL & SCREEN TIME SCHEMA
+    // ==========================================
+    // 1. Registered Student Devices
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS student_devices (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        student_id INT NOT NULL,
+        device_uuid VARCHAR(100) NOT NULL UNIQUE,
+        device_model VARCHAR(100) DEFAULT NULL,
+        platform VARCHAR(20) DEFAULT 'android',
+        policy_version INT DEFAULT 1,
+        is_active BOOLEAN DEFAULT TRUE,
+        last_sync_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+        INDEX (student_id),
+        INDEX (device_uuid)
+      )
+    `);
+
+    // 2. Parental Control Policies (Bedtime, Daily limits, Emergency lock)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS parental_policies (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        student_id INT NOT NULL UNIQUE,
+        policy_version INT DEFAULT 1,
+        daily_limit_minutes INT DEFAULT 0,
+        bedtime_start TIME DEFAULT NULL,
+        bedtime_end TIME DEFAULT NULL,
+        is_locked BOOLEAN DEFAULT FALSE,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
+      )
+    `);
+
+    // 3. App-Specific Restriction Rules
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS parental_app_rules (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        student_id INT NOT NULL,
+        package_name VARCHAR(150) NOT NULL,
+        app_name VARCHAR(150) NOT NULL,
+        daily_limit_minutes INT DEFAULT 0,
+        is_blocked BOOLEAN DEFAULT FALSE,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_student_package (student_id, package_name),
+        FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
+      )
+    `);
+
+    // 4. Screen Time Usage Summaries & Real App Breakdown
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS parental_usage_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        student_id INT NOT NULL,
+        date DATE NOT NULL,
+        package_name VARCHAR(150) NOT NULL,
+        app_name VARCHAR(150) NOT NULL,
+        usage_minutes INT DEFAULT 0,
+        last_recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_daily_app_usage (student_id, date, package_name),
+        INDEX (student_id, date)
+      )
+    `);
+
+    // 5. Daily Screen Time Rollup per Student
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS student_screen_time_daily (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        student_id INT NOT NULL,
+        date DATE NOT NULL,
+        total_screen_time_minutes INT DEFAULT 0,
+        night_screen_time_minutes INT DEFAULT 0,
+        is_screen_on BOOLEAN DEFAULT FALSE,
+        current_app VARCHAR(150) DEFAULT NULL,
+        last_ping DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_student_date (student_id, date),
+        INDEX (student_id),
+        INDEX (date)
+      )
+    `);
+
     console.log('Database schema auto-migrations executed successfully.');
   } catch (err: any) {
     console.error(`Error during database migrations: ${err.message}`);
