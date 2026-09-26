@@ -569,6 +569,7 @@ router.post('/auto-login', async (req: Request, res: Response): Promise<any> => 
 
     return res.json({
       success: true,
+      token,
       data: {
         token,
         user: {
