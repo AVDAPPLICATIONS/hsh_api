@@ -144,7 +144,7 @@ router.get('/my-status', verifyStudent, async (req, res) => {
     
     const now = getCurrentIST();
     const sessionDate = now.toISOString().slice(0, 10);
-    const nowMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
     let activeSession = null;
     
