@@ -397,15 +397,17 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
       });
     }
 
-    // 7. REGULAR STUDENT LOGIN (EXTERNAL AVD API SYNC)
-    const normalizedInputUsername = String(bankCode).replace(/^0+(?=\d)/, '');
+    // 7. REGULAR STUDENT LOGIN (DIRECT EXTERNAL AVD API CHECK)
+    const rawInput = String(bankCode).trim();
+    const normalizedInputUsername = rawInput.replace(/^0+(?=\d)/, '');
 
+    // Fetch live student list directly from AVD API
     const apiData: any = await new Promise((resolve, reject) => {
       https.get('https://api.avdvvn.org/public/getStudentBasicDetails', {
         headers: { 'x-hsh-auth-token': 'aF92Kx7QmN4Lp8Vz' }
-      }, (response) => {
+      }, (response: any) => {
         let data = '';
-        response.on('data', chunk => data += chunk);
+        response.on('data', (chunk: any) => data += chunk);
         response.on('end', () => {
           try {
             resolve(JSON.parse(data));
@@ -417,15 +419,28 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
     });
 
     if (!apiData || !apiData.data) {
-      return res.status(500).json({ success: false, message: 'Failed to fetch external API' });
+      return res.status(500).json({ success: false, message: 'Failed to fetch student data from AVD API' });
     }
 
-    const extStudent = apiData.data.find((s: any) =>
-      String(s.bankCode).replace(/^0+(?=\d)/, '') === normalizedInputUsername
-    );
+    // Match student from external API by bankCode, phone, aadhar, or email
+    const extStudent = apiData.data.find((s: any) => {
+      const sBank = String(s.bankCode || '').trim();
+      const sNormBank = sBank.replace(/^0+(?=\d)/, '');
+      const sPhone = String(s.phone || '').trim();
+      const sAadhar = String(s.aadhar || '').trim();
+      const sEmail = String(s.email || '').trim().toLowerCase();
+
+      return (
+        sBank === rawInput ||
+        (sNormBank && sNormBank === normalizedInputUsername) ||
+        (sPhone && sPhone === rawInput) ||
+        (sAadhar && sAadhar === rawInput) ||
+        (sEmail && sEmail === rawInput.toLowerCase())
+      );
+    });
 
     if (!extStudent) {
-      return res.status(401).json({ success: false, message: 'Invalid code' });
+      return res.status(401).json({ success: false, message: `Student ID "${rawInput}" not found on AVD server` });
     }
 
     const canonicalUsername = extStudent.bankCode;
@@ -438,20 +453,24 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
     }
 
     const [localStudents]: any = await pool.query(
-      'SELECT * FROM students WHERE student_code IN (?, ?)',
+      'SELECT * FROM students WHERE student_code IN (?, ?) LIMIT 1',
       [canonicalUsername, normalizedInputUsername]
     );
 
     let student: any = null;
+    const fullName = `${extStudent.firstName || ''} ${extStudent.lastName || ''}`.trim() || canonicalUsername;
+    const phone = extStudent.phone || canonicalUsername;
+    const fatherPhone = extStudent.fatherPhone || null;
+    const motherPhone = extStudent.motherPhone || null;
+    const parentPhone = fatherPhone || motherPhone || null;
+
     if (localStudents.length === 0) {
-      const fullName = `${extStudent.firstName} ${extStudent.lastName}`;
-      const phone = extStudent.phone || canonicalUsername;
       const dummyHash = '$2b$10$DKYfBMxGt00SY4/kwh1yeeGZChSF6/9uvosxdWV63dJe.AUQPPME6';
 
       const [insertResult]: any = await pool.query(
-        `INSERT INTO students (student_code, name, phone_number, password_hash, floor_id, device_uuid, assigned_mobile, room_number)
-         VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`,
-        [canonicalUsername, fullName, phone, dummyHash, floorId, phone, extStudent.room || null]
+        `INSERT INTO students (student_code, name, phone_number, password_hash, floor_id, device_uuid, assigned_mobile, room_number, father_phone, mother_phone, parent_phone)
+         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
+        [canonicalUsername, fullName, phone, dummyHash, floorId, phone, extStudent.room || null, fatherPhone, motherPhone, parentPhone]
       );
 
       student = {
@@ -459,10 +478,23 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
         student_code: canonicalUsername,
         name: fullName,
         floor_id: floorId,
-        room_number: extStudent.room || null
+        room_number: extStudent.room || null,
+        phone_number: phone
       };
     } else {
       student = localStudents[0];
+      await pool.query(
+        `UPDATE students 
+         SET name = ?, floor_id = ?, room_number = ?, 
+             father_phone = COALESCE(?, father_phone), 
+             mother_phone = COALESCE(?, mother_phone), 
+             parent_phone = COALESCE(?, parent_phone) 
+         WHERE id = ?`,
+        [fullName, floorId, extStudent.room || student.room_number, fatherPhone, motherPhone, parentPhone, student.id]
+      );
+      student.name = fullName;
+      student.floor_id = floorId;
+      student.room_number = extStudent.room || student.room_number;
     }
 
     // Check if this student has active leadership (leader or wing-leader)
@@ -497,11 +529,15 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
 
     return res.json({
       success: true,
+      token,
       data: {
         token,
         user: {
           role: roles.includes('leader') ? 'LEADER' : roles.includes('wing-leader') ? 'WING_LEADER' : 'STUDENT',
           roles,
+          id: student.id,
+          student_id: student.id,
+          student_code: student.student_code,
           name: student.name,
           floor_id: student.floor_id,
           room: extStudent.room || student.room_number || '',
