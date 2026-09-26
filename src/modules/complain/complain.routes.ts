@@ -90,7 +90,7 @@ router.post('/', requireAuth, uploadComplainImages.array('images', 5), async (re
 // GET /api/complain (Scoped list of complaints)
 router.get('/', requireAuth, async (req: Request, res: Response): Promise<any> => {
   try {
-    const { status, room, category } = req.query;
+    const { status, room, category, aadhar, student_code, bank_code, student_id } = req.query;
     const isPlatformAdmin = req.roles?.includes('platform-admin');
     const isSolver = req.roles?.includes('complain-solver');
     const isLeader = req.roles?.includes('leader') || req.roles?.includes('wing-leader');
@@ -117,11 +117,23 @@ router.get('/', requireAuth, async (req: Request, res: Response): Promise<any> =
         query += ' AND c.room IN (?)';
         params.push(leaderScope.assigned_rooms);
       }
+    } else {
+      const studentFilter = aadhar || student_code || bank_code;
+      if (studentFilter) {
+        query += ' AND s.student_code = ?';
+        params.push(studentFilter);
+      } else if (student_id) {
+        query += ' AND c.student_id = ?';
+        params.push(parseInt(student_id as string, 10));
+      }
     }
 
     if (status) {
+      let dbStatus = status;
+      if (status === 'reviewed') dbStatus = 'in_progress';
+      else if (status === 'resolved') dbStatus = 'solved';
       query += ' AND c.status = ?';
-      params.push(status);
+      params.push(dbStatus);
     }
     if (room) {
       query += ' AND c.room = ?';
@@ -135,7 +147,19 @@ router.get('/', requireAuth, async (req: Request, res: Response): Promise<any> =
     query += ' ORDER BY c.submitTime DESC';
     const [rows]: any = await pool.query(query, params);
 
-    return res.json({ success: true, data: rows });
+    const formatted = rows.map((r: any) => ({
+      ...r,
+      aadhar: r.student_code,
+      studentAadhar: r.student_code,
+      fullName: r.student_name,
+      studentName: r.student_name,
+      response: r.solver_response,
+      review: r.student_feedback,
+      resolveTime: r.resolveTime || r.solvedTime,
+      phone: r.phone_number
+    }));
+
+    return res.json({ success: true, data: formatted });
   } catch (err: any) {
     console.error('Error listing complaints:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
@@ -168,12 +192,99 @@ router.get('/:id', requireAuth, async (req: Request, res: Response): Promise<any
       }
     }
 
-    return res.json({ success: true, data: complaint });
+    const formatted = {
+      ...complaint,
+      aadhar: complaint.student_code,
+      studentAadhar: complaint.student_code,
+      fullName: complaint.student_name,
+      studentName: complaint.student_name,
+      response: complaint.solver_response,
+      review: complaint.student_feedback,
+      resolveTime: complaint.resolveTime || complaint.solvedTime,
+      phone: complaint.phone_number
+    };
+
+    return res.json({ success: true, data: { ...formatted, complain: formatted } });
   } catch (err: any) {
     console.error('Error getting complaint:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
+
+// PATCH & PUT /api/complain/:id (General update for status, response, review)
+const handleUpdateComplaint = async (req: Request, res: Response): Promise<any> => {
+  try {
+    const complainId = parseInt(req.params.id as string, 10);
+    const { status, response, review } = req.body;
+
+    const [existing]: any = await pool.query('SELECT * FROM complains WHERE id = ?', [complainId]);
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: 'Complaint not found' });
+    }
+
+    const updateFields: string[] = [];
+    const params: any[] = [];
+
+    if (status !== undefined) {
+      let dbStatus = status;
+      if (status === 'reviewed') dbStatus = 'in_progress';
+      if (status === 'resolved') dbStatus = 'solved';
+      updateFields.push('status = ?');
+      params.push(dbStatus);
+
+      if (dbStatus === 'solved' || status === 'resolved') {
+        updateFields.push('solvedTime = NOW()');
+        updateFields.push('resolveTime = NOW()');
+      }
+    }
+
+    if (response !== undefined) {
+      updateFields.push('solver_response = ?');
+      params.push(response);
+    }
+
+    if (review !== undefined) {
+      updateFields.push('student_feedback = ?');
+      params.push(review);
+    }
+
+    if (updateFields.length > 0) {
+      params.push(complainId);
+      await pool.query(`UPDATE complains SET ${updateFields.join(', ')} WHERE id = ?`, params);
+    }
+
+    const [rows]: any = await pool.query(`
+      SELECT c.*, s.name AS student_name, s.student_code, s.phone_number, s.room_number,
+             su.name AS solver_name
+      FROM complains c
+      LEFT JOIN students s ON c.student_id = s.id
+      LEFT JOIN staff_users su ON c.assigned_solver_id = su.id
+      WHERE c.id = ?
+    `, [complainId]);
+
+    const updated = rows[0];
+    const formatted = {
+      ...updated,
+      aadhar: updated.student_code,
+      studentAadhar: updated.student_code,
+      fullName: updated.student_name,
+      studentName: updated.student_name,
+      response: updated.solver_response,
+      review: updated.student_feedback,
+      resolveTime: updated.resolveTime || updated.solvedTime,
+      phone: updated.phone_number
+    };
+
+    return res.json({ success: true, data: { ...formatted, complain: formatted } });
+  } catch (err: any) {
+    console.error('Error updating complaint:', err);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+router.patch('/:id', requireAuth, handleUpdateComplaint);
+router.put('/:id', requireAuth, handleUpdateComplaint);
+
 
 // PATCH /api/complain/:id/solve (Complain-Solver or Admin marks as solved)
 router.patch('/:id/solve', requireAuth, requireRole('complain-solver', 'platform-admin'), async (req: Request, res: Response): Promise<any> => {
