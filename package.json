@@ -1,0 +1,43 @@
+{
+  "name": "hostel-attendance-backend",
+  "version": "1.0.0",
+  "description": "Node + Express + MySQL backend for ESP32-BLE-based hostel attendance",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "pm2:start": "npm run build && npx pm2 start ecosystem.config.js",
+    "pm2:stop": "npx pm2 stop ecosystem.config.js",
+    "pm2:restart": "npm run build && npx pm2 restart ecosystem.config.js",
+    "pm2:status": "npx pm2 status",
+    "pm2:logs": "npx pm2 logs hsh-api"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc14",
+    "axios": "^1.20.0",
+    "bcrypt": "^5.1.1",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "firebase-admin": "^12.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.4.0",
+    "mysql2": "^3.10.0",
+    "node-cron": "^4.6.0",
+    "pino": "^10.3.1"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.2.0",
+    "@types/node": "^26.6.3",
+    "@types/node-cron": "^3.0.11",
+    "nodemon": "^3.1.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

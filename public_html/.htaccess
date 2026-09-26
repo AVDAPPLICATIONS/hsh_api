@@ -1,9 +1,0 @@
-PassengerAppRoot /home/u562700164/domains/attendent.hpys.in/hbuilds/current/nodejs
-PassengerAppType node
-PassengerNodejs /opt/alt/alt-nodejs22/root/bin/node
-PassengerStartupFile server.js
-PassengerBaseURI /
-PassengerRestartDir /home/u562700164/domains/attendent.hpys.in/hbuilds/current/nodejs/tmp
-SetEnv NODE_OPTIONS "--require /home/u562700164/domains/attendent.hpys.in/hbuilds/config/preload-timestamp.js"
-SetEnv LSNODE_CONSOLE_LOG console.log
-SetEnv TOKIO_WORKER_THREADS 2

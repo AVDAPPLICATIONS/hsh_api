@@ -1,0 +1,7 @@
+node_modules/
+dist/
+logs/
+tmp/
+*.log
+database_export/
+*.sql
