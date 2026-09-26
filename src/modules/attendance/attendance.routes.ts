@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../../config/db').default || require('../../config/db');
-const { verifyStudent, verifyFloorLeader, verifyAdminOrFloorLeader, verifyOperator } = require('../../middleware/auth');
+const { verifyStudent, verifyFloorLeader, verifyAdminOrFloorLeader, verifyOperator, requireAuth } = require('../../middleware/auth');
 const admin = require('../../config/firebase').default || require('../../config/firebase');
 const crypto = require('crypto');
 const axios = require('axios');
@@ -10,6 +10,110 @@ const { getCurrentIST } = require('../../utils/time');
 const SECRET_KEY = process.env.AES_SECRET_KEY || 'HAMS_SECRET_KEY!'; // Must be 16 bytes for AES-128
 
 const MIN_RSSI = parseInt(process.env.MIN_RSSI || '-100', 10);
+
+// ------------------------------------------------------------
+// GET /api/attendance (List history for student / filters)
+// ------------------------------------------------------------
+router.get('/', requireAuth, async (req, res) => {
+  try {
+    const studentId = req.student?.id || req.user?.student_id;
+    const { type, startDate, endDate, from, to, limit = 50, offset = 0 } = req.query;
+
+    let query = `
+      SELECT r.id, r.student_id, r.bank_code, r.student_name, r.timestamp, r.created_at,
+             ses.session_date, ses.session_type, ses.starts_at, ses.ends_at
+      FROM attendance_records r
+      LEFT JOIN attendance_sessions ses ON r.session_id = ses.id
+      WHERE 1=1
+    `;
+    const params = [];
+    if (studentId) {
+      query += ' AND r.student_id = ?';
+      params.push(studentId);
+    }
+    if (type) {
+      query += ' AND LOWER(ses.session_type) = LOWER(?)';
+      params.push(type);
+    }
+    const start = startDate || from;
+    if (start) {
+      query += ' AND (ses.session_date >= ? OR DATE(r.created_at) >= ?)';
+      params.push(start, start);
+    }
+    const end = endDate || to;
+    if (end) {
+      query += ' AND (ses.session_date <= ? OR DATE(r.created_at) <= ?)';
+      params.push(end, end);
+    }
+    query += ' ORDER BY COALESCE(r.timestamp, r.created_at) DESC LIMIT ? OFFSET ?';
+    params.push(parseInt(limit, 10) || 50, parseInt(offset, 10) || 0);
+
+    const [rows] = await pool.query(query, params);
+    const formatted = (rows || []).map(r => ({
+      id: r.id,
+      aadhar: r.bank_code,
+      studentAadhar: r.bank_code,
+      studentName: r.student_name,
+      date: r.session_date || r.created_at,
+      time: r.timestamp || r.created_at,
+      type: r.session_type || 'night',
+      viaCode: true
+    }));
+
+    return res.json({ success: true, data: formatted });
+  } catch (err) {
+    console.error('Error fetching attendance list:', err);
+    return res.json({ success: true, data: [] });
+  }
+});
+
+// ------------------------------------------------------------
+// POST /api/attendance (Mark attendance)
+// ------------------------------------------------------------
+router.post('/', requireAuth, async (req, res) => {
+  try {
+    const studentId = req.student?.id || req.user?.student_id;
+    const { type = 'night', viaCode = true } = req.body;
+    const now = getCurrentIST();
+    const dateStr = now.toISOString().slice(0, 10);
+
+    const [students] = await pool.query('SELECT name, student_code, floor_id FROM students WHERE id = ?', [studentId]);
+    const studentName = students[0]?.name || 'Student';
+    const bankCode = students[0]?.student_code || '';
+    const floorId = students[0]?.floor_id || 0;
+
+    let [sessions] = await pool.query('SELECT id FROM attendance_sessions WHERE session_date = ? AND LOWER(session_type) = LOWER(?) LIMIT 1', [dateStr, type]);
+    let sessionId;
+    if (sessions.length > 0) {
+      sessionId = sessions[0].id;
+    } else {
+      const [newSes] = await pool.query('INSERT INTO attendance_sessions (session_date, session_type, starts_at, ends_at) VALUES (?, ?, NOW(), NOW())', [dateStr, type]);
+      sessionId = newSes.insertId;
+    }
+
+    const [insertResult] = await pool.query(
+      'INSERT INTO attendance_records (session_id, bank_code, student_name, student_id, floor_id, timestamp, created_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())',
+      [sessionId, bankCode, studentName, studentId, floorId]
+    );
+
+    return res.status(201).json({
+      success: true,
+      data: {
+        id: insertResult.insertId,
+        aadhar: bankCode,
+        studentAadhar: bankCode,
+        studentName,
+        date: now,
+        time: now,
+        type,
+        viaCode
+      }
+    });
+  } catch (err) {
+    console.error('Error marking attendance:', err);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
 
 // ------------------------------------------------------------
 // GET /api/attendance/my-status

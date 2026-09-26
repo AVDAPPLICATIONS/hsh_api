@@ -13,10 +13,16 @@ router.get(['/me', '/:id'], requireAuth, async (req: Request, res: Response): Pr
 
     if (requested && requested !== 'me') {
       const isStaffOrLeader = req.roles?.some(r => ['platform-admin', 'leader', 'wing-leader'].includes(r));
-      const [byLookup]: any = await pool.query(
-        'SELECT * FROM students WHERE id = ? OR student_code = ? LIMIT 1',
-        [isNaN(Number(requested)) ? 0 : Number(requested), requested]
+      let [byLookup]: any = await pool.query(
+        'SELECT * FROM students WHERE student_code = ? LIMIT 1',
+        [requested]
       );
+      if (byLookup.length === 0 && !isNaN(Number(requested))) {
+        [byLookup] = await pool.query(
+          'SELECT * FROM students WHERE id = ? LIMIT 1',
+          [Number(requested)]
+        );
+      }
       if (byLookup.length > 0) {
         if (!isStaffOrLeader && byLookup[0].id !== studentId) {
           return res.status(403).json({ success: false, message: 'Forbidden' });
@@ -75,10 +81,16 @@ router.patch(['/me', '/:id'], requireAuth, async (req: Request, res: Response): 
     let studentId = req.user?.student_id || req.student?.id;
     const requested = req.params.id;
     if (requested && requested !== 'me') {
-      const [byLookup]: any = await pool.query(
-        'SELECT id FROM students WHERE id = ? OR student_code = ? LIMIT 1',
-        [isNaN(Number(requested)) ? 0 : Number(requested), requested]
+      let [byLookup]: any = await pool.query(
+        'SELECT id FROM students WHERE student_code = ? LIMIT 1',
+        [requested]
       );
+      if (byLookup.length === 0 && !isNaN(Number(requested))) {
+        [byLookup] = await pool.query(
+          'SELECT id FROM students WHERE id = ? LIMIT 1',
+          [Number(requested)]
+        );
+      }
       if (byLookup.length > 0) studentId = byLookup[0].id;
     }
 
