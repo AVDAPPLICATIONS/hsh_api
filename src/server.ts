@@ -8,7 +8,7 @@ import path from 'path';
 import fs from 'fs';
 
 // Database & Auto-migrations
-import { runMigrations } from './config/db';
+import pool, { runMigrations } from './config/db';
 
 // Background Services
 import './services/cron';
@@ -68,22 +68,86 @@ app.get('/', (_req: Request, res: Response) => {
 // Run startup database migrations
 runMigrations().catch(err => console.error('Migration initialization error:', err));
 
-// Route bindings
-app.use('/api/auth', authRoutes);
-app.use('/api/complain', complainRoutes);
-app.use('/api/laundry', laundryRoutes);
-app.use('/api/delegation', delegationRoutes);
-app.use('/api/attendance', attendanceRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/students', studentsRoutes);
-app.use('/api/floors', floorsRoutes);
-app.use('/api/esp32', esp32Routes);
-app.use('/api/version', versionRoutes);
-app.use('/api/whatsapp', whatsappRoutes);
-app.use('/api/notification', notificationRoutes);
-app.use('/api/tags', tagsRoutes);
-app.use('/api/leaders', leadersRoutes);
-app.use('/api/rebind', rebindRoutes);
+// Route bindings (Mounted with both /api/<path> and /<path> for client compatibility)
+const mountRoute = (prefix: string, handler: any) => {
+  app.use(`/api/${prefix}`, handler);
+  app.use(`/${prefix}`, handler);
+};
+
+mountRoute('auth', authRoutes);
+mountRoute('complain', complainRoutes);
+mountRoute('laundry', laundryRoutes);
+mountRoute('delegation', delegationRoutes);
+mountRoute('attendance', attendanceRoutes);
+mountRoute('admin', adminRoutes);
+mountRoute('students', studentsRoutes);
+mountRoute('floors', floorsRoutes);
+mountRoute('esp32', esp32Routes);
+mountRoute('version', versionRoutes);
+mountRoute('whatsapp', whatsappRoutes);
+mountRoute('notification', notificationRoutes);
+mountRoute('tags', tagsRoutes);
+mountRoute('leaders', leadersRoutes);
+mountRoute('rebind', rebindRoutes);
+
+// Legacy utility endpoints for backwards compatibility
+app.get(['/api/migrate-room', '/migrate-room'], async (_req: Request, res: Response) => {
+  res.send('Schema migrations now run automatically on backend startup.');
+});
+
+app.get(['/api/force-cleanup', '/force-cleanup'], async (_req: Request, res: Response): Promise<any> => {
+  const https = require('https');
+  try {
+    const apiData: any = await new Promise((resolve, reject) => {
+      https.get('https://api.avdvvn.org/public/getStudentBasicDetails', {
+        headers: { 'x-hsh-auth-token': 'aF92Kx7QmN4Lp8Vz' }
+      }, (response: any) => {
+        let data = '';
+        response.on('data', (chunk: any) => data += chunk);
+        response.on('end', () => {
+          try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+        });
+      }).on('error', reject);
+    });
+
+    if (!apiData || !apiData.data) {
+      return res.status(500).send('No data from API');
+    }
+
+    let logs: string[] = [];
+    let deletedCount = 0;
+    logs.push(`Total students from external API: ${apiData.data.length}`);
+
+    for (const extStudent of apiData.data) {
+      if (!extStudent.bankCode) continue;
+      const canonicalUsername = extStudent.bankCode;
+      const roomRaw = extStudent.room ? extStudent.room.toString().trim() : '';
+
+      if (!roomRaw || roomRaw === 'null' || roomRaw === '') {
+        const [existing]: any = await pool.query('SELECT id, name FROM students WHERE student_code = ?', [canonicalUsername]);
+        if (existing.length > 0) {
+          const sid = existing[0].id;
+          logs.push(`Deleting ${existing[0].name} (Bank: ${canonicalUsername}, No Room)`);
+          try {
+            await pool.query('DELETE FROM rebind_requests WHERE student_id = ?', [sid]);
+            await pool.query("DELETE FROM attendance_records WHERE TRIM(LEADING '0' FROM bank_code) = TRIM(LEADING '0' FROM ?)", [canonicalUsername]);
+            await pool.query('DELETE FROM students WHERE id = ?', [sid]);
+            deletedCount++;
+          } catch (err: any) {
+            logs.push(`ERROR DELETING ${canonicalUsername}: ${err.message}`);
+          }
+        }
+      }
+    }
+
+    logs.push(`Cleanup complete! Successfully deleted ${deletedCount} unassigned students.`);
+    const [[{ total }]]: any = await pool.query('SELECT COUNT(*) AS total FROM students');
+    logs.push(`Total students remaining in database: ${total}`);
+    res.type('text/plain').send(logs.join('\n'));
+  } catch (e: any) {
+    res.status(500).type('text/plain').send(`Fatal Error during cleanup:\n${e.stack}`);
+  }
+});
 
 // Fallback error handler
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
