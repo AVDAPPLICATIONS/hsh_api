@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+ function _optionalChain(ops) { let lastAccessLHS = undefined; let value = ops[0]; let i = 1; while (i < ops.length) { const op = ops[i]; const fn = ops[i + 1]; i += 2; if ((op === 'optionalAccess' || op === 'optionalCall') && value == null) { return undefined; } if (op === 'access' || op === 'optionalAccess') { lastAccessLHS = value; value = fn(value); } else if (op === 'call' || op === 'optionalCall') { value = fn((...args) => value.call(lastAccessLHS, ...args)); lastAccessLHS = undefined; } } return value; }import { Router, } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import https from 'https';
@@ -9,7 +9,7 @@ const router = Router();
 const SALT_ROUNDS = 10;
 
 // POST /api/auth/student/register
-router.post('/student/register', async (req: Request, res: Response): Promise<any> => {
+router.post('/student/register', async (req, res) => {
   try {
     const { student_code, name, phone_number, password, floor_id, device_uuid } = req.body;
 
@@ -17,7 +17,7 @@ router.post('/student/register', async (req: Request, res: Response): Promise<an
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
-    const [existing]: any = await pool.query(
+    const [existing] = await pool.query(
       'SELECT id FROM students WHERE student_code = ? OR phone_number = ?',
       [student_code, phone_number]
     );
@@ -27,7 +27,7 @@ router.post('/student/register', async (req: Request, res: Response): Promise<an
 
     const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
 
-    const [result]: any = await pool.query(
+    const [result] = await pool.query(
       `INSERT INTO students (student_code, name, phone_number, password_hash, floor_id, device_uuid, assigned_mobile)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [student_code, name, phone_number, password_hash, floor_id, device_uuid, phone_number]
@@ -36,25 +36,25 @@ router.post('/student/register', async (req: Request, res: Response): Promise<an
     const token = jwt.sign(
       { id: result.insertId, student_code, floor_id, role: 'student' },
       process.env.JWT_SECRET || 'secret',
-      { expiresIn: process.env.JWT_EXPIRES_IN || '365d' } as any
+      { expiresIn: process.env.JWT_EXPIRES_IN || '365d' } 
     );
 
     return res.status(201).json({ success: true, token, student_id: result.insertId });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error in student register:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // POST /api/auth/student/login
-router.post('/student/login', async (req: Request, res: Response): Promise<any> => {
+router.post('/student/login', async (req, res) => {
   try {
     const { phone_number, password, device_uuid } = req.body;
     if (!phone_number || !password || !device_uuid) {
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
-    const [rows]: any = await pool.query('SELECT * FROM students WHERE phone_number = ?', [phone_number]);
+    const [rows] = await pool.query('SELECT * FROM students WHERE phone_number = ?', [phone_number]);
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Student not found' });
     }
@@ -77,13 +77,13 @@ router.post('/student/login', async (req: Request, res: Response): Promise<any> 
     }
 
     // Check if student has leadership assignment
-    const [leadRows]: any = await pool.query(
+    const [leadRows] = await pool.query(
       'SELECT role, assigned_floors, assigned_wings, assigned_rooms FROM student_leadership WHERE student_id = ? AND is_active = TRUE',
       [student.id]
     );
 
     const roles = ['student'];
-    let leadershipInfo: any = null;
+    let leadershipInfo = null;
     if (leadRows.length > 0) {
       roles.push(leadRows[0].role);
       leadershipInfo = {
@@ -103,7 +103,7 @@ router.post('/student/login', async (req: Request, res: Response): Promise<any> 
         roles
       },
       process.env.JWT_SECRET || 'secret',
-      { expiresIn: process.env.JWT_EXPIRES_IN || '365d' } as any
+      { expiresIn: process.env.JWT_EXPIRES_IN || '365d' } 
     );
 
     return res.json({
@@ -119,14 +119,14 @@ router.post('/student/login', async (req: Request, res: Response): Promise<any> 
         leadership: leadershipInfo
       }
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error in student login:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // POST /api/auth/leader/login
-router.post('/leader/login', async (req: Request, res: Response): Promise<any> => {
+router.post('/leader/login', async (req, res) => {
   try {
     const { phone_number, username, password } = req.body;
     const identifier = username || phone_number;
@@ -134,7 +134,7 @@ router.post('/leader/login', async (req: Request, res: Response): Promise<any> =
       return res.status(400).json({ success: false, message: 'Missing login credentials' });
     }
 
-    const [rows]: any = await pool.query(
+    const [rows] = await pool.query(
       'SELECT * FROM floor_leaders WHERE (username = ? OR phone_number = ?) AND is_active = TRUE',
       [identifier, identifier]
     );
@@ -148,7 +148,7 @@ router.post('/leader/login', async (req: Request, res: Response): Promise<any> =
       return res.status(401).json({ success: false, message: 'Incorrect password' });
     }
 
-    let assignedFloors: number[] = [leader.floor_id];
+    let assignedFloors = [leader.floor_id];
     if (leader.assigned_floors) {
       try {
         assignedFloors = typeof leader.assigned_floors === 'string'
@@ -180,7 +180,7 @@ router.post('/leader/login', async (req: Request, res: Response): Promise<any> =
         role: 'floor_leader'
       },
       process.env.JWT_SECRET || 'secret',
-      { expiresIn: process.env.JWT_EXPIRES_IN || '365d' } as any
+      { expiresIn: process.env.JWT_EXPIRES_IN || '365d' } 
     );
 
     return res.json({
@@ -195,14 +195,14 @@ router.post('/leader/login', async (req: Request, res: Response): Promise<any> =
         assigned_sessions: assignedSessions
       }
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error in leader login:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // POST /api/auth/login (MASTER UNIFIED LOGIN)
-router.post('/login', async (req: Request, res: Response): Promise<any> => {
+router.post('/login', async (req, res) => {
   try {
     const bankCode = req.body.username || req.body.bank_code;
     const password = req.body.password;
@@ -220,7 +220,7 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
       const token = jwt.sign(
         { id: 9999, floor_id: 0, role: 'admin', roles: ['platform-admin'] },
         process.env.JWT_SECRET || 'secret',
-        { expiresIn: process.env.JWT_EXPIRES_IN || '365d' } as any
+        { expiresIn: process.env.JWT_EXPIRES_IN || '365d' } 
       );
       return res.json({
         success: true,
@@ -232,7 +232,7 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
     }
 
     // 2. STAFF USERS TABLE (complain-solver, laundry-man, platform-admin)
-    const [staffUsers]: any = await pool.query(
+    const [staffUsers] = await pool.query(
       'SELECT * FROM staff_users WHERE (username = ? OR phone_number = ?) AND is_active = TRUE',
       [String(bankCode).trim(), String(bankCode).trim()]
     );
@@ -249,7 +249,7 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
       const token = jwt.sign(
         { id: staff.id, username: staff.username, role: staff.role, roles: [staff.role] },
         process.env.JWT_SECRET || 'secret',
-        { expiresIn: process.env.JWT_EXPIRES_IN || '365d' } as any
+        { expiresIn: process.env.JWT_EXPIRES_IN || '365d' } 
       );
 
       return res.json({
@@ -269,7 +269,7 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
     }
 
     // 3. DATABASE FLOOR LEADER LOGIN
-    const [dbLeaders]: any = await pool.query(
+    const [dbLeaders] = await pool.query(
       'SELECT * FROM floor_leaders WHERE (LOWER(username) = LOWER(?) OR phone_number = ?) AND is_active = TRUE',
       [String(bankCode).trim(), String(bankCode).trim()]
     );
@@ -304,7 +304,7 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
           roles: ['leader']
         },
         process.env.JWT_SECRET || 'secret',
-        { expiresIn: process.env.JWT_EXPIRES_IN || '365d' } as any
+        { expiresIn: process.env.JWT_EXPIRES_IN || '365d' } 
       );
 
       return res.json({
@@ -340,7 +340,7 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
       const token = jwt.sign(
         { id: 8000 + leaderFloorId, floor_id: leaderFloorId, assigned_floors: [leaderFloorId], role: 'floor_leader', roles: ['leader'] },
         process.env.JWT_SECRET || 'secret',
-        { expiresIn: process.env.JWT_EXPIRES_IN || '365d' } as any
+        { expiresIn: process.env.JWT_EXPIRES_IN || '365d' } 
       );
       return res.json({
         success: true,
@@ -362,7 +362,7 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
       const token = jwt.sign(
         { id: 99999, student_code: bankCode, floor_id: 9, role: 'student', roles: ['student'] },
         process.env.JWT_SECRET || 'secret',
-        { expiresIn: process.env.JWT_EXPIRES_IN || '365d' } as any
+        { expiresIn: process.env.JWT_EXPIRES_IN || '365d' } 
       );
       return res.json({
         success: true,
@@ -386,7 +386,7 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
       const token = jwt.sign(
         { id: 99998, floor_id: 0, role: 'operator', roles: ['operator'] },
         process.env.JWT_SECRET || 'secret',
-        { expiresIn: process.env.JWT_EXPIRES_IN || '365d' } as any
+        { expiresIn: process.env.JWT_EXPIRES_IN || '365d' } 
       );
       return res.json({
         success: true,
@@ -402,12 +402,12 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
     const normalizedInputUsername = rawInput.replace(/^0+(?=\d)/, '');
 
     // Fetch live student list directly from AVD API
-    const apiData: any = await new Promise((resolve, reject) => {
+    const apiData = await new Promise((resolve, reject) => {
       https.get('https://api.avdvvn.org/public/getStudentBasicDetails', {
         headers: { 'x-hsh-auth-token': 'aF92Kx7QmN4Lp8Vz' }
-      }, (response: any) => {
+      }, (response) => {
         let data = '';
-        response.on('data', (chunk: any) => data += chunk);
+        response.on('data', (chunk) => data += chunk);
         response.on('end', () => {
           try {
             resolve(JSON.parse(data));
@@ -423,7 +423,7 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
     }
 
     // Match student from external API by bankCode, phone, aadhar, or email
-    const extStudent = apiData.data.find((s: any) => {
+    const extStudent = apiData.data.find((s) => {
       const sBank = String(s.bankCode || '').trim();
       const sNormBank = sBank.replace(/^0+(?=\d)/, '');
       const sPhone = String(s.phone || '').trim();
@@ -452,12 +452,12 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
       }
     }
 
-    const [localStudents]: any = await pool.query(
+    const [localStudents] = await pool.query(
       'SELECT * FROM students WHERE student_code IN (?, ?) LIMIT 1',
       [canonicalUsername, normalizedInputUsername]
     );
 
-    let student: any = null;
+    let student = null;
     const fullName = `${extStudent.firstName || ''} ${extStudent.lastName || ''}`.trim() || canonicalUsername;
     const phone = extStudent.phone || canonicalUsername;
     const fatherPhone = extStudent.fatherPhone || null;
@@ -467,7 +467,7 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
     if (localStudents.length === 0) {
       const dummyHash = '$2b$10$DKYfBMxGt00SY4/kwh1yeeGZChSF6/9uvosxdWV63dJe.AUQPPME6';
 
-      const [insertResult]: any = await pool.query(
+      const [insertResult] = await pool.query(
         `INSERT INTO students (student_code, name, phone_number, password_hash, floor_id, device_uuid, assigned_mobile, room_number, father_phone, mother_phone, parent_phone)
          VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
         [canonicalUsername, fullName, phone, dummyHash, floorId, phone, extStudent.room || null, fatherPhone, motherPhone, parentPhone]
@@ -498,13 +498,13 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
     }
 
     // Check if this student has active leadership (leader or wing-leader)
-    const [leadershipRows]: any = await pool.query(
+    const [leadershipRows] = await pool.query(
       'SELECT role, assigned_floors, assigned_wings, assigned_rooms FROM student_leadership WHERE student_id = ? AND is_active = TRUE',
       [student.id]
     );
 
     const roles = ['student'];
-    let leadershipData: any = null;
+    let leadershipData = null;
     if (leadershipRows.length > 0) {
       roles.push(leadershipRows[0].role);
       leadershipData = {
@@ -524,7 +524,7 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
         roles
       },
       process.env.JWT_SECRET || 'secret',
-      { expiresIn: process.env.JWT_EXPIRES_IN || '365d' } as any
+      { expiresIn: process.env.JWT_EXPIRES_IN || '365d' } 
     );
 
     return res.json({
@@ -547,39 +547,39 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
         }
       }
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error in master login:', err);
     return res.status(500).json({ success: false, message: 'Server error during login' });
   }
 });
 
 // POST /api/auth/fcm-token
-router.post('/fcm-token', verifyStudent, async (req: Request, res: Response): Promise<any> => {
+router.post('/fcm-token', verifyStudent, async (req, res) => {
   try {
     const { token } = req.body;
     if (!token) {
       return res.status(400).json({ success: false, message: 'Missing token' });
     }
-    const studentId = req.student?.id || req.user?.student_id;
+    const studentId = _optionalChain([req, 'access', _ => _.student, 'optionalAccess', _2 => _2.id]) || _optionalChain([req, 'access', _3 => _3.user, 'optionalAccess', _4 => _4.student_id]);
     await pool.query('UPDATE students SET fcm_token = ? WHERE id = ?', [token, studentId]);
     return res.json({ success: true, message: 'FCM token saved' });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error saving FCM token:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // POST /api/auth/auto-login (SIM Detection)
-router.post('/auto-login', async (req: Request, res: Response): Promise<any> => {
+router.post('/auto-login', async (req, res) => {
   try {
     const { sim_numbers } = req.body;
     if (!sim_numbers || !Array.isArray(sim_numbers) || sim_numbers.length === 0) {
       return res.status(400).json({ success: false, message: 'No SIM numbers provided' });
     }
 
-    const [students]: any = await pool.query('SELECT * FROM students WHERE is_active = TRUE AND assigned_mobile IS NOT NULL');
+    const [students] = await pool.query('SELECT * FROM students WHERE is_active = TRUE AND assigned_mobile IS NOT NULL');
 
-    let matchedStudent: any = null;
+    let matchedStudent = null;
     for (const student of students) {
       const assignedLast10 = String(student.assigned_mobile).slice(-10);
       for (const sim of sim_numbers) {
@@ -600,7 +600,7 @@ router.post('/auto-login', async (req: Request, res: Response): Promise<any> => 
     const token = jwt.sign(
       { id: matchedStudent.id, student_code: matchedStudent.student_code, floor_id: matchedStudent.floor_id, role: 'student', roles: ['student'] },
       process.env.JWT_SECRET || 'secret',
-      { expiresIn: process.env.JWT_EXPIRES_IN || '365d' } as any
+      { expiresIn: process.env.JWT_EXPIRES_IN || '365d' } 
     );
 
     return res.json({
@@ -619,7 +619,7 @@ router.post('/auto-login', async (req: Request, res: Response): Promise<any> => 
         }
       }
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error in auto-login:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }

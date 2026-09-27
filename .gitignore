@@ -29,3 +29,11 @@ tmp/
 Thumbs.db
 .vscode/
 .idea/
+
+# Baileys WhatsApp Session & Uploads
+src/config/auth_info_baileys/
+public/uploads/*
+!public/uploads/.gitkeep
+public/apks/*
+!public/apks/.gitkeep
+

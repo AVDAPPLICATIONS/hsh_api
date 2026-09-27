@@ -1,4 +1,4 @@
-import mysql, { Pool } from 'mysql2/promise';
+import mysql, { } from 'mysql2/promise';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -6,7 +6,7 @@ const dbSsl = process.env.DB_SSL === 'true' || process.env.DB_SSL === '1'
   ? { rejectUnauthorized: false }
   : undefined;
 
-export const pool: Pool = mysql.createPool({
+export const pool = mysql.createPool({
   host: process.env.DB_HOST || '127.0.0.1',
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
@@ -19,10 +19,10 @@ export const pool: Pool = mysql.createPool({
   ssl: dbSsl
 });
 
-export async function runMigrations(): Promise<void> {
+export async function runMigrations() {
   try {
     // 1. Students Columns
-    const [columns]: any = await pool.query(`SHOW COLUMNS FROM students LIKE 'room_number'`);
+    const [columns] = await pool.query(`SHOW COLUMNS FROM students LIKE 'room_number'`);
     if (columns.length === 0) {
       await pool.query(`ALTER TABLE students ADD COLUMN room_number VARCHAR(20) DEFAULT NULL`);
     }
@@ -198,28 +198,28 @@ export async function runMigrations(): Promise<void> {
 
     // Make sure student_id column exists if table was created previously with bank_code
     try {
-      const [compCols]: any = await pool.query(`SHOW COLUMNS FROM complains LIKE 'student_id'`);
+      const [compCols] = await pool.query(`SHOW COLUMNS FROM complains LIKE 'student_id'`);
       if (compCols.length === 0) {
         await pool.query(`ALTER TABLE complains ADD COLUMN student_id INT NOT NULL DEFAULT 0 AFTER id`);
         await pool.query(`UPDATE complains c JOIN students s ON c.bank_code = s.student_code SET c.student_id = s.id`);
       }
-      const [solvedTimeCols]: any = await pool.query(`SHOW COLUMNS FROM complains LIKE 'solvedTime'`);
+      const [solvedTimeCols] = await pool.query(`SHOW COLUMNS FROM complains LIKE 'solvedTime'`);
       if (solvedTimeCols.length === 0) {
         await pool.query(`ALTER TABLE complains ADD COLUMN solvedTime DATETIME DEFAULT NULL AFTER submitTime`);
       }
-      const [solverRespCols]: any = await pool.query(`SHOW COLUMNS FROM complains LIKE 'solver_response'`);
+      const [solverRespCols] = await pool.query(`SHOW COLUMNS FROM complains LIKE 'solver_response'`);
       if (solverRespCols.length === 0) {
         await pool.query(`ALTER TABLE complains ADD COLUMN solver_response TEXT DEFAULT NULL`);
       }
-      const [studFbCols]: any = await pool.query(`SHOW COLUMNS FROM complains LIKE 'student_feedback'`);
+      const [studFbCols] = await pool.query(`SHOW COLUMNS FROM complains LIKE 'student_feedback'`);
       if (studFbCols.length === 0) {
         await pool.query(`ALTER TABLE complains ADD COLUMN student_feedback TEXT DEFAULT NULL`);
       }
-      const [studRatingCols]: any = await pool.query(`SHOW COLUMNS FROM complains LIKE 'student_rating'`);
+      const [studRatingCols] = await pool.query(`SHOW COLUMNS FROM complains LIKE 'student_rating'`);
       if (studRatingCols.length === 0) {
         await pool.query(`ALTER TABLE complains ADD COLUMN student_rating TINYINT DEFAULT NULL`);
       }
-      const [assignedSolverCols]: any = await pool.query(`SHOW COLUMNS FROM complains LIKE 'assigned_solver_id'`);
+      const [assignedSolverCols] = await pool.query(`SHOW COLUMNS FROM complains LIKE 'assigned_solver_id'`);
       if (assignedSolverCols.length === 0) {
         await pool.query(`ALTER TABLE complains ADD COLUMN assigned_solver_id INT DEFAULT NULL`);
       }
@@ -299,12 +299,12 @@ export async function runMigrations(): Promise<void> {
     `);
 
     try {
-      const [laundryCols]: any = await pool.query(`SHOW COLUMNS FROM laundry LIKE 'student_id'`);
+      const [laundryCols] = await pool.query(`SHOW COLUMNS FROM laundry LIKE 'student_id'`);
       if (laundryCols.length === 0) {
         await pool.query(`ALTER TABLE laundry ADD COLUMN student_id INT NOT NULL DEFAULT 0 AFTER id`);
         await pool.query(`UPDATE laundry l JOIN students s ON l.bank_code = s.student_code SET l.student_id = s.id`);
       }
-      const [procByCols]: any = await pool.query(`SHOW COLUMNS FROM laundry LIKE 'processed_by'`);
+      const [procByCols] = await pool.query(`SHOW COLUMNS FROM laundry LIKE 'processed_by'`);
       if (procByCols.length === 0) {
         await pool.query(`ALTER TABLE laundry ADD COLUMN processed_by INT DEFAULT NULL`);
       }
@@ -323,7 +323,7 @@ export async function runMigrations(): Promise<void> {
     `);
 
     try {
-      const [rechCols]: any = await pool.query(`SHOW COLUMNS FROM laundryrecharge LIKE 'student_id'`);
+      const [rechCols] = await pool.query(`SHOW COLUMNS FROM laundryrecharge LIKE 'student_id'`);
       if (rechCols.length === 0) {
         await pool.query(`ALTER TABLE laundryrecharge ADD COLUMN student_id INT NOT NULL DEFAULT 0 AFTER id`);
         await pool.query(`UPDATE laundryrecharge lr JOIN students s ON lr.bank_code = s.student_code SET lr.student_id = s.id`);
@@ -414,7 +414,7 @@ export async function runMigrations(): Promise<void> {
     `);
 
     console.log('Database schema auto-migrations executed successfully.');
-  } catch (err: any) {
+  } catch (err) {
     console.error(`Error during database migrations: ${err.message}`);
   }
 }

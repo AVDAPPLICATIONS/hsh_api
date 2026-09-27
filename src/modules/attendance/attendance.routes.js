@@ -1,4 +1,4 @@
-const express = require('express');
+ function _optionalChain(ops) { let lastAccessLHS = undefined; let value = ops[0]; let i = 1; while (i < ops.length) { const op = ops[i]; const fn = ops[i + 1]; i += 2; if ((op === 'optionalAccess' || op === 'optionalCall') && value == null) { return undefined; } if (op === 'access' || op === 'optionalAccess') { lastAccessLHS = value; value = fn(value); } else if (op === 'call' || op === 'optionalCall') { value = fn((...args) => value.call(lastAccessLHS, ...args)); lastAccessLHS = undefined; } } return value; }const express = require('express');
 const router = express.Router();
 const pool = require('../../config/db').default || require('../../config/db');
 const { verifyStudent, verifyFloorLeader, verifyAdminOrFloorLeader, verifyOperator, requireAuth } = require('../../middleware/auth');
@@ -16,7 +16,7 @@ const MIN_RSSI = parseInt(process.env.MIN_RSSI || '-100', 10);
 // ------------------------------------------------------------
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const studentId = req.student?.id || req.user?.student_id;
+    const studentId = _optionalChain([req, 'access', _ => _.student, 'optionalAccess', _2 => _2.id]) || _optionalChain([req, 'access', _3 => _3.user, 'optionalAccess', _4 => _4.student_id]);
     const { type, startDate, endDate, from, to, limit = 50, offset = 0 } = req.query;
 
     let query = `
@@ -72,15 +72,15 @@ router.get('/', requireAuth, async (req, res) => {
 // ------------------------------------------------------------
 router.post('/', requireAuth, async (req, res) => {
   try {
-    const studentId = req.student?.id || req.user?.student_id;
+    const studentId = _optionalChain([req, 'access', _5 => _5.student, 'optionalAccess', _6 => _6.id]) || _optionalChain([req, 'access', _7 => _7.user, 'optionalAccess', _8 => _8.student_id]);
     const { type = 'night', viaCode = true } = req.body;
     const now = getCurrentIST();
     const dateStr = now.toISOString().slice(0, 10);
 
     const [students] = await pool.query('SELECT name, student_code, floor_id FROM students WHERE id = ?', [studentId]);
-    const studentName = students[0]?.name || 'Student';
-    const bankCode = students[0]?.student_code || '';
-    const floorId = students[0]?.floor_id || 0;
+    const studentName = _optionalChain([students, 'access', _9 => _9[0], 'optionalAccess', _10 => _10.name]) || 'Student';
+    const bankCode = _optionalChain([students, 'access', _11 => _11[0], 'optionalAccess', _12 => _12.student_code]) || '';
+    const floorId = _optionalChain([students, 'access', _13 => _13[0], 'optionalAccess', _14 => _14.floor_id]) || 0;
 
     let [sessions] = await pool.query('SELECT id FROM attendance_sessions WHERE session_date = ? AND LOWER(session_type) = LOWER(?) LIMIT 1', [dateStr, type]);
     let sessionId;
@@ -171,9 +171,9 @@ router.get('/my-status', verifyStudent, async (req, res) => {
 
     let attendanceActive = activeSession !== null;
     let activeSessionType = activeSession ? activeSession.session_key : null;
-    let activeSessionName = activeSession ? activeSession.session_name : (allSchedules[0]?.session_name || 'Night Attendance');
-    let startTimeStr = activeSession ? activeSession.start_time : (allSchedules[0]?.start_time || '22:30');
-    let endTimeStr = activeSession ? activeSession.end_time : (allSchedules[0]?.end_time || '23:05');
+    let activeSessionName = activeSession ? activeSession.session_name : (_optionalChain([allSchedules, 'access', _15 => _15[0], 'optionalAccess', _16 => _16.session_name]) || 'Night Attendance');
+    let startTimeStr = activeSession ? activeSession.start_time : (_optionalChain([allSchedules, 'access', _17 => _17[0], 'optionalAccess', _18 => _18.start_time]) || '22:30');
+    let endTimeStr = activeSession ? activeSession.end_time : (_optionalChain([allSchedules, 'access', _19 => _19[0], 'optionalAccess', _20 => _20.end_time]) || '23:05');
 
     let alreadyMarked = false;
     let bankCode = null;
@@ -699,7 +699,7 @@ router.post('/mark', verifyStudent, async (req, res) => {
     let startDt = null;
     let endDt = null;
     
-    for (const [type, times] of (Object.entries(schedules) as [string, any][])) {
+    for (const [type, times] of (Object.entries(schedules) )) {
       const [startH, startM] = times.start.split(':').map(Number);
       const [endH, endM] = times.end.split(':').map(Number);
       const currentStartDt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), startH, startM, 0));
@@ -940,7 +940,7 @@ router.post('/manual-mark', verifyOperator, async (req, res) => {
       endDt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), endH, endM, 0));
     } else {
       // Auto-detect based on time
-      for (const [type, times] of (Object.entries(schedules) as [string, any][])) {
+      for (const [type, times] of (Object.entries(schedules) )) {
         const [startH, startM] = times.start.split(':').map(Number);
         const [endH, endM] = times.end.split(':').map(Number);
         const currentStartDt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), startH, startM, 0));

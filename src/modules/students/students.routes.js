@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+ function _optionalChain(ops) { let lastAccessLHS = undefined; let value = ops[0]; let i = 1; while (i < ops.length) { const op = ops[i]; const fn = ops[i + 1]; i += 2; if ((op === 'optionalAccess' || op === 'optionalCall') && value == null) { return undefined; } if (op === 'access' || op === 'optionalAccess') { lastAccessLHS = value; value = fn(value); } else if (op === 'call' || op === 'optionalCall') { value = fn((...args) => value.call(lastAccessLHS, ...args)); lastAccessLHS = undefined; } } return value; }import { Router, } from 'express';
 import https from 'https';
 import pool from '../../config/db';
 import { requireAuth, verifyAdminOrFloorLeader } from '../../middleware/auth';
@@ -6,14 +6,14 @@ import { requireAuth, verifyAdminOrFloorLeader } from '../../middleware/auth';
 const router = Router();
 
 // GET /api/students/me or /api/students/:id (Student Profile for Mobile App)
-router.get(['/me', '/:id'], requireAuth, async (req: Request, res: Response): Promise<any> => {
+router.get(['/me', '/:id'], requireAuth, async (req, res) => {
   try {
-    let studentId = req.user?.student_id || req.student?.id;
+    let studentId = _optionalChain([req, 'access', _ => _.user, 'optionalAccess', _2 => _2.student_id]) || _optionalChain([req, 'access', _3 => _3.student, 'optionalAccess', _4 => _4.id]);
     const requested = req.params.id;
 
     if (requested && requested !== 'me') {
-      const isStaffOrLeader = req.roles?.some(r => ['platform-admin', 'leader', 'wing-leader'].includes(r));
-      let [byLookup]: any = await pool.query(
+      const isStaffOrLeader = _optionalChain([req, 'access', _5 => _5.roles, 'optionalAccess', _6 => _6.some, 'call', _7 => _7(r => ['platform-admin', 'leader', 'wing-leader'].includes(r))]);
+      let [byLookup] = await pool.query(
         'SELECT * FROM students WHERE student_code = ? LIMIT 1',
         [requested]
       );
@@ -35,7 +35,7 @@ router.get(['/me', '/:id'], requireAuth, async (req: Request, res: Response): Pr
       return res.status(400).json({ success: false, message: 'Student ID not resolved' });
     }
 
-    const [rows]: any = await pool.query('SELECT * FROM students WHERE id = ?', [studentId]);
+    const [rows] = await pool.query('SELECT * FROM students WHERE id = ?', [studentId]);
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Student profile not found' });
     }
@@ -69,19 +69,19 @@ router.get(['/me', '/:id'], requireAuth, async (req: Request, res: Response): Pr
         student: profileData
       }
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error fetching student profile:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // PATCH /api/students/:id (Update Profile)
-router.patch(['/me', '/:id'], requireAuth, async (req: Request, res: Response): Promise<any> => {
+router.patch(['/me', '/:id'], requireAuth, async (req, res) => {
   try {
-    let studentId = req.user?.student_id || req.student?.id;
+    let studentId = _optionalChain([req, 'access', _8 => _8.user, 'optionalAccess', _9 => _9.student_id]) || _optionalChain([req, 'access', _10 => _10.student, 'optionalAccess', _11 => _11.id]);
     const requested = req.params.id;
     if (requested && requested !== 'me') {
-      let [byLookup]: any = await pool.query(
+      let [byLookup] = await pool.query(
         'SELECT id FROM students WHERE student_code = ? LIMIT 1',
         [requested]
       );
@@ -104,9 +104,9 @@ router.patch(['/me', '/:id'], requireAuth, async (req: Request, res: Response): 
       [phone || whatsAppNumber || null, fatherPhone || null, motherPhone || null, studentId]
     );
 
-    const [rows]: any = await pool.query('SELECT * FROM students WHERE id = ?', [studentId]);
+    const [rows] = await pool.query('SELECT * FROM students WHERE id = ?', [studentId]);
     return res.json({ success: true, data: { student: rows[0] } });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error updating student profile:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
@@ -115,13 +115,13 @@ router.patch(['/me', '/:id'], requireAuth, async (req: Request, res: Response): 
 router.use(verifyAdminOrFloorLeader);
 
 // GET /api/students/floor-targets
-router.get('/floor-targets', async (req: Request, res: Response): Promise<any> => {
+router.get('/floor-targets', async (req, res) => {
   try {
     const { session_key, floor_id } = req.query;
     if (!session_key || floor_id === undefined) {
       return res.status(400).json({ success: false, message: 'Missing session_key or floor_id' });
     }
-    const [rows]: any = await pool.query(
+    const [rows] = await pool.query(
       'SELECT target_type, student_ids FROM floor_session_targets WHERE floor_id = ? AND session_key = ?',
       [floor_id, session_key]
     );
@@ -129,14 +129,14 @@ router.get('/floor-targets', async (req: Request, res: Response): Promise<any> =
       return res.json({ success: true, data: { target_type: 'ALL', student_ids: [] } });
     }
     return res.json({ success: true, data: rows[0] });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error fetching floor targets:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // POST /api/students/floor-targets
-router.post('/floor-targets', async (req: Request, res: Response): Promise<any> => {
+router.post('/floor-targets', async (req, res) => {
   try {
     const { session_key, floor_id, target_type, student_ids } = req.body;
     if (!session_key || floor_id === undefined || !target_type) {
@@ -152,27 +152,27 @@ router.post('/floor-targets', async (req: Request, res: Response): Promise<any> 
     `, [floor_id, session_key, target_type, idsJson]);
 
     return res.json({ success: true, message: 'Targets saved successfully' });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error saving floor targets:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // GET /api/students/sessions
-router.get('/sessions', async (_req: Request, res: Response): Promise<any> => {
+router.get('/sessions', async (_req, res) => {
   try {
-    const [rows]: any = await pool.query('SELECT * FROM attendance_schedules ORDER BY start_time ASC');
+    const [rows] = await pool.query('SELECT * FROM attendance_schedules ORDER BY start_time ASC');
     return res.json({ success: true, data: rows });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error fetching sessions:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // Sync function from AVD API
-export async function syncStudentsFromApi(): Promise<void> {
+export async function syncStudentsFromApi() {
   try {
-    const apiData: any = await new Promise((resolve, reject) => {
+    const apiData = await new Promise((resolve, reject) => {
       https.get('https://api.avdvvn.org/public/getStudentBasicDetails', {
         headers: { 'x-hsh-auth-token': 'aF92Kx7QmN4Lp8Vz' }
       }, (response) => {
@@ -241,22 +241,22 @@ export async function syncStudentsFromApi(): Promise<void> {
         }
       }
     }
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error syncing students from API:', err.message || err);
   }
 }
 
 // GET /api/students
-router.get('/', async (req: Request, res: Response): Promise<any> => {
+router.get('/', async (req, res) => {
   try {
     await syncStudentsFromApi();
 
     let query = 'SELECT id AS student_id, name, floor_id, student_code, phone_number, assigned_mobile, room_number, is_default_present FROM students WHERE is_active = TRUE';
-    const params: any[] = [];
+    const params = [];
 
     if (req.leader) {
       const leaderFloors = Array.isArray(req.leader.assigned_floors) && req.leader.assigned_floors.length > 0
-        ? req.leader.assigned_floors.map((f: any) => parseInt(f, 10)).filter((f: any) => !isNaN(f))
+        ? req.leader.assigned_floors.map((f) => parseInt(f, 10)).filter((f) => !isNaN(f))
         : (req.leader.floor_id !== undefined ? [parseInt(req.leader.floor_id, 10)] : []);
 
       if (leaderFloors.length > 0) {
@@ -265,16 +265,16 @@ router.get('/', async (req: Request, res: Response): Promise<any> => {
       }
     }
     query += ' ORDER BY name ASC';
-    const [students]: any = await pool.query(query, params);
+    const [students] = await pool.query(query, params);
 
     try {
-      const [tagRows]: any = await pool.query(`
+      const [tagRows] = await pool.query(`
         SELECT sta.student_id, t.id as tag_id, t.name, t.color, t.is_system, t.description
         FROM student_tag_assignments sta
         JOIN student_tags t ON sta.tag_id = t.id
       `);
 
-      const tagsMap: Record<number, any[]> = {};
+      const tagsMap = {};
       for (const tr of tagRows) {
         if (!tagsMap[tr.student_id]) tagsMap[tr.student_id] = [];
         tagsMap[tr.student_id].push({
@@ -286,7 +286,7 @@ router.get('/', async (req: Request, res: Response): Promise<any> => {
         });
       }
 
-      const enrichedStudents = students.map((s: any) => ({
+      const enrichedStudents = students.map((s) => ({
         ...s,
         tags: tagsMap[s.student_id] || []
       }));
@@ -295,19 +295,19 @@ router.get('/', async (req: Request, res: Response): Promise<any> => {
     } catch (tagErr) {
       return res.json({ success: true, data: students });
     }
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error in get students:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // DELETE /api/students/:id
-router.delete('/:id', async (req: Request, res: Response): Promise<any> => {
+router.delete('/:id', async (req, res) => {
   try {
     const studentId = req.params.id;
 
     if (req.leader) {
-      const [students]: any = await pool.query('SELECT floor_id FROM students WHERE id = ?', [studentId]);
+      const [students] = await pool.query('SELECT floor_id FROM students WHERE id = ?', [studentId]);
       if (students.length === 0 || students[0].floor_id !== req.leader.floor_id) {
         return res.status(403).json({ success: false, message: 'Not authorized to delete this student' });
       }
@@ -317,14 +317,14 @@ router.delete('/:id', async (req: Request, res: Response): Promise<any> => {
     await pool.query('DELETE FROM students WHERE id = ?', [studentId]);
 
     return res.json({ success: true, message: 'Student deleted successfully' });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error deleting student:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // POST /api/students
-router.post('/', async (req: Request, res: Response): Promise<any> => {
+router.post('/', async (req, res) => {
   try {
     const { name, student_code, phone_number, floor_id, room_number } = req.body;
     if (!name || !student_code || !floor_id) {
@@ -353,7 +353,7 @@ router.post('/', async (req: Request, res: Response): Promise<any> => {
       [student_code, name, finalPhone, dummyHash, finalFloorId, finalPhone, finalRoom]
     );
     return res.json({ success: true, message: 'Student added successfully' });
-  } catch (err: any) {
+  } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
       return res.status(400).json({ success: false, message: 'Student with this Bank Code already exists' });
     }
@@ -363,18 +363,18 @@ router.post('/', async (req: Request, res: Response): Promise<any> => {
 });
 
 // POST /api/students/sync
-router.post('/sync', async (_req: Request, res: Response): Promise<any> => {
+router.post('/sync', async (_req, res) => {
   try {
     await syncStudentsFromApi();
     return res.json({ success: true, message: 'Students synced successfully from External API' });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error syncing students:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // PUT /api/students/:id/room
-router.put('/:id/room', async (req: Request, res: Response): Promise<any> => {
+router.put('/:id/room', async (req, res) => {
   try {
     const studentId = req.params.id;
     const { floor_id } = req.body;
@@ -382,40 +382,40 @@ router.put('/:id/room', async (req: Request, res: Response): Promise<any> => {
 
     await pool.query('UPDATE students SET floor_id = ? WHERE id = ?', [newFloorId, studentId]);
     return res.json({ success: true, message: 'Floor assigned successfully' });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error assigning floor:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // PUT /api/students/:id/mobile
-router.put('/:id/mobile', async (req: Request, res: Response): Promise<any> => {
+router.put('/:id/mobile', async (req, res) => {
   try {
     const studentId = req.params.id;
     const { assigned_mobile } = req.body;
     const newMobile = (assigned_mobile && assigned_mobile.trim() !== '') ? assigned_mobile.trim() : null;
 
-    const [result]: any = await pool.query('UPDATE students SET assigned_mobile = ? WHERE id = ?', [newMobile, studentId]);
+    const [result] = await pool.query('UPDATE students SET assigned_mobile = ? WHERE id = ?', [newMobile, studentId]);
     if (result.affectedRows === 0) {
       return res.status(404).json({ success: false, message: `Student ID ${studentId} not found in database` });
     }
 
     return res.json({ success: true, message: 'Mobile assigned successfully' });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error assigning mobile:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // PUT /api/students/:id/default-attendance
-router.put('/:id/default-attendance', async (req: Request, res: Response): Promise<any> => {
+router.put('/:id/default-attendance', async (req, res) => {
   try {
     const studentId = req.params.id;
     const { is_default_present } = req.body;
 
     let newVal = is_default_present;
     if (newVal === undefined) {
-      const [rows]: any = await pool.query('SELECT is_default_present FROM students WHERE id = ?', [studentId]);
+      const [rows] = await pool.query('SELECT is_default_present FROM students WHERE id = ?', [studentId]);
       if (rows.length === 0) return res.status(404).json({ success: false, message: 'Student not found' });
       newVal = !rows[0].is_default_present;
     }
@@ -427,7 +427,7 @@ router.put('/:id/default-attendance', async (req: Request, res: Response): Promi
       is_default_present: !!newVal,
       message: `Default attendance set to ${newVal ? 'ON (Auto-Mark Present)' : 'OFF'}`
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error updating default attendance:', err);
     return res.status(500).json({ success: false, message: 'Server error: ' + (err.sqlMessage || err.message) });
   }

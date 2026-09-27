@@ -2,7 +2,7 @@ process.env.TZ = 'Asia/Kolkata';
 import dotenv from 'dotenv';
 dotenv.config();
 
-import express, { Request, Response, NextFunction } from 'express';
+import express, { } from 'express';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
@@ -58,7 +58,7 @@ if (!fs.existsSync(uploadsDir)) {
 app.use('/uploads', express.static(uploadsDir));
 
 // Health check endpoint
-app.get('/', (_req: Request, res: Response) => {
+app.get('/', (_req, res) => {
   res.json({
     status: 'ok',
     service: 'hostel-attendance-backend',
@@ -71,7 +71,7 @@ app.get('/', (_req: Request, res: Response) => {
 runMigrations().catch(err => console.error('Migration initialization error:', err));
 
 // Route bindings (Mounted with both /api/<path> and /<path> for client compatibility)
-const mountRoute = (prefix: string, handler: any) => {
+const mountRoute = (prefix, handler) => {
   app.use(`/api/${prefix}`, handler);
   app.use(`/${prefix}`, handler);
 };
@@ -96,19 +96,19 @@ mountRoute('rebind', rebindRoutes);
 mountRoute('screen-time', screentimeRoutes);
 
 // Legacy utility endpoints for backwards compatibility
-app.get(['/api/migrate-room', '/migrate-room'], async (_req: Request, res: Response) => {
+app.get(['/api/migrate-room', '/migrate-room'], async (_req, res) => {
   res.send('Schema migrations now run automatically on backend startup.');
 });
 
-app.get(['/api/force-cleanup', '/force-cleanup'], async (_req: Request, res: Response): Promise<any> => {
+app.get(['/api/force-cleanup', '/force-cleanup'], async (_req, res) => {
   const https = require('https');
   try {
-    const apiData: any = await new Promise((resolve, reject) => {
+    const apiData = await new Promise((resolve, reject) => {
       https.get('https://api.avdvvn.org/public/getStudentBasicDetails', {
         headers: { 'x-hsh-auth-token': 'aF92Kx7QmN4Lp8Vz' }
-      }, (response: any) => {
+      }, (response) => {
         let data = '';
-        response.on('data', (chunk: any) => data += chunk);
+        response.on('data', (chunk) => data += chunk);
         response.on('end', () => {
           try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
         });
@@ -119,7 +119,7 @@ app.get(['/api/force-cleanup', '/force-cleanup'], async (_req: Request, res: Res
       return res.status(500).send('No data from API');
     }
 
-    let logs: string[] = [];
+    let logs = [];
     let deletedCount = 0;
     logs.push(`Total students from external API: ${apiData.data.length}`);
 
@@ -129,7 +129,7 @@ app.get(['/api/force-cleanup', '/force-cleanup'], async (_req: Request, res: Res
       const roomRaw = extStudent.room ? extStudent.room.toString().trim() : '';
 
       if (!roomRaw || roomRaw === 'null' || roomRaw === '') {
-        const [existing]: any = await pool.query('SELECT id, name FROM students WHERE student_code = ?', [canonicalUsername]);
+        const [existing] = await pool.query('SELECT id, name FROM students WHERE student_code = ?', [canonicalUsername]);
         if (existing.length > 0) {
           const sid = existing[0].id;
           logs.push(`Deleting ${existing[0].name} (Bank: ${canonicalUsername}, No Room)`);
@@ -138,7 +138,7 @@ app.get(['/api/force-cleanup', '/force-cleanup'], async (_req: Request, res: Res
             await pool.query("DELETE FROM attendance_records WHERE TRIM(LEADING '0' FROM bank_code) = TRIM(LEADING '0' FROM ?)", [canonicalUsername]);
             await pool.query('DELETE FROM students WHERE id = ?', [sid]);
             deletedCount++;
-          } catch (err: any) {
+          } catch (err) {
             logs.push(`ERROR DELETING ${canonicalUsername}: ${err.message}`);
           }
         }
@@ -146,16 +146,16 @@ app.get(['/api/force-cleanup', '/force-cleanup'], async (_req: Request, res: Res
     }
 
     logs.push(`Cleanup complete! Successfully deleted ${deletedCount} unassigned students.`);
-    const [[{ total }]]: any = await pool.query('SELECT COUNT(*) AS total FROM students');
+    const [[{ total }]] = await pool.query('SELECT COUNT(*) AS total FROM students');
     logs.push(`Total students remaining in database: ${total}`);
     res.type('text/plain').send(logs.join('\n'));
-  } catch (e: any) {
+  } catch (e) {
     res.status(500).type('text/plain').send(`Fatal Error during cleanup:\n${e.stack}`);
   }
 });
 
 // Fallback error handler
-app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+app.use((err, _req, res, _next) => {
   console.error('[Error Handler]', err);
   res.status(500).json({
     success: false,

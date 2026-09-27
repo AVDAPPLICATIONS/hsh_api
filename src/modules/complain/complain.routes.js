@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+ function _optionalChain(ops) { let lastAccessLHS = undefined; let value = ops[0]; let i = 1; while (i < ops.length) { const op = ops[i]; const fn = ops[i + 1]; i += 2; if ((op === 'optionalAccess' || op === 'optionalCall') && value == null) { return undefined; } if (op === 'access' || op === 'optionalAccess') { lastAccessLHS = value; value = fn(value); } else if (op === 'call' || op === 'optionalCall') { value = fn((...args) => value.call(lastAccessLHS, ...args)); lastAccessLHS = undefined; } } return value; }import { Router, } from 'express';
 import path from 'path';
 import fs from 'fs';
 import pool from '../../config/db';
@@ -9,24 +9,24 @@ import { uploadComplainImages, COMPLAIN_UPLOAD_DIR } from '../../middleware/uplo
 const router = Router();
 
 // GET /api/complain/categories
-router.get('/categories', async (_req: Request, res: Response) => {
+router.get('/categories', async (_req, res) => {
   try {
-    const [rows]: any = await pool.query('SELECT DISTINCT compType FROM complains WHERE compType IS NOT NULL');
-    const dbCategories = rows.map((r: any) => r.compType).filter(Boolean);
+    const [rows] = await pool.query('SELECT DISTINCT compType FROM complains WHERE compType IS NOT NULL');
+    const dbCategories = rows.map((r) => r.compType).filter(Boolean);
     const standardCategories = ['Electrical', 'Plumbing', 'Furniture', 'Cleaning', 'Internet', 'Carpentry', 'Other'];
     const allCategories = Array.from(new Set([...standardCategories, ...dbCategories])).sort();
 
     return res.json({ success: true, data: { categories: allCategories } });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error fetching categories:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // POST /api/complain (Student registers complaint)
-router.post('/', requireAuth, uploadComplainImages.array('images', 5), async (req: Request, res: Response): Promise<any> => {
+router.post('/', requireAuth, uploadComplainImages.array('images', 5), async (req, res) => {
   try {
-    const studentId = req.student?.id || req.user?.student_id;
+    const studentId = _optionalChain([req, 'access', _ => _.student, 'optionalAccess', _2 => _2.id]) || _optionalChain([req, 'access', _3 => _3.user, 'optionalAccess', _4 => _4.student_id]);
     if (!studentId) {
       return res.status(403).json({ success: false, message: 'Only students can file complaints' });
     }
@@ -37,7 +37,7 @@ router.post('/', requireAuth, uploadComplainImages.array('images', 5), async (re
     }
 
     // 1. Check if student is locked out of this category (due to ignoring 24h feedback on a previous complaint)
-    const [locks]: any = await pool.query(
+    const [locks] = await pool.query(
       'SELECT id, locked_reason FROM student_category_locks WHERE student_id = ? AND category = ? AND is_locked = TRUE',
       [studentId, compType]
     );
@@ -51,11 +51,11 @@ router.post('/', requireAuth, uploadComplainImages.array('images', 5), async (re
     }
 
     // 2. Fetch student profile for default room if not specified
-    const [students]: any = await pool.query('SELECT room_number FROM students WHERE id = ?', [studentId]);
-    const finalRoom = room || students[0]?.room_number || '';
+    const [students] = await pool.query('SELECT room_number FROM students WHERE id = ?', [studentId]);
+    const finalRoom = room || _optionalChain([students, 'access', _5 => _5[0], 'optionalAccess', _6 => _6.room_number]) || '';
 
     // 3. Create active complaint record
-    const [insertResult]: any = await pool.query(
+    const [insertResult] = await pool.query(
       `INSERT INTO complains (student_id, room, compDesc, compType, status, images, submitTime)
        VALUES (?, ?, ?, ?, 'pending', 0, NOW())`,
       [studentId, finalRoom, compDesc, compType]
@@ -63,7 +63,7 @@ router.post('/', requireAuth, uploadComplainImages.array('images', 5), async (re
     const complainId = insertResult.insertId;
 
     // 4. Rename uploaded files to complain_{id}_{index}.ext
-    const files = req.files as Express.Multer.File[];
+    const files = req.files ;
     let fileCount = 0;
     if (files && files.length > 0) {
       fileCount = files.length;
@@ -79,21 +79,21 @@ router.post('/', requireAuth, uploadComplainImages.array('images', 5), async (re
       await pool.query('UPDATE complains SET images = ? WHERE id = ?', [fileCount, complainId]);
     }
 
-    const [complainRows]: any = await pool.query('SELECT * FROM complains WHERE id = ?', [complainId]);
+    const [complainRows] = await pool.query('SELECT * FROM complains WHERE id = ?', [complainId]);
     return res.status(201).json({ success: true, data: { complain: complainRows[0] } });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error creating complaint:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // GET /api/complain (Scoped list of complaints)
-router.get('/', requireAuth, async (req: Request, res: Response): Promise<any> => {
+router.get('/', requireAuth, async (req, res) => {
   try {
     const { status, room, category, aadhar, student_code, bank_code, student_id } = req.query;
-    const isPlatformAdmin = req.roles?.includes('platform-admin');
-    const isSolver = req.roles?.includes('complain-solver');
-    const isLeader = req.roles?.includes('leader') || req.roles?.includes('wing-leader');
+    const isPlatformAdmin = _optionalChain([req, 'access', _7 => _7.roles, 'optionalAccess', _8 => _8.includes, 'call', _9 => _9('platform-admin')]);
+    const isSolver = _optionalChain([req, 'access', _10 => _10.roles, 'optionalAccess', _11 => _11.includes, 'call', _12 => _12('complain-solver')]);
+    const isLeader = _optionalChain([req, 'access', _13 => _13.roles, 'optionalAccess', _14 => _14.includes, 'call', _15 => _15('leader')]) || _optionalChain([req, 'access', _16 => _16.roles, 'optionalAccess', _17 => _17.includes, 'call', _18 => _18('wing-leader')]);
     const isOnlyStudent = !isPlatformAdmin && !isSolver && !isLeader;
 
     let query = `
@@ -104,16 +104,16 @@ router.get('/', requireAuth, async (req: Request, res: Response): Promise<any> =
       LEFT JOIN staff_users su ON c.assigned_solver_id = su.id
       WHERE 1=1
     `;
-    const params: any[] = [];
+    const params = [];
 
     // Filter by student identity if regular student
     if (isOnlyStudent) {
       query += ' AND c.student_id = ?';
-      params.push(req.user?.student_id || req.student?.id);
+      params.push(_optionalChain([req, 'access', _19 => _19.user, 'optionalAccess', _20 => _20.student_id]) || _optionalChain([req, 'access', _21 => _21.student, 'optionalAccess', _22 => _22.id]));
     } else if (isLeader && !isPlatformAdmin) {
       // Leader/Wing-Leader: filter to assigned rooms or floors
-      const leaderScope = req.user?.scope;
-      if (leaderScope?.assigned_rooms && leaderScope.assigned_rooms.length > 0) {
+      const leaderScope = _optionalChain([req, 'access', _23 => _23.user, 'optionalAccess', _24 => _24.scope]);
+      if (_optionalChain([leaderScope, 'optionalAccess', _25 => _25.assigned_rooms]) && leaderScope.assigned_rooms.length > 0) {
         query += ' AND c.room IN (?)';
         params.push(leaderScope.assigned_rooms);
       }
@@ -124,7 +124,7 @@ router.get('/', requireAuth, async (req: Request, res: Response): Promise<any> =
         params.push(studentFilter);
       } else if (student_id) {
         query += ' AND c.student_id = ?';
-        params.push(parseInt(student_id as string, 10));
+        params.push(parseInt(student_id , 10));
       }
     }
 
@@ -145,9 +145,9 @@ router.get('/', requireAuth, async (req: Request, res: Response): Promise<any> =
     }
 
     query += ' ORDER BY c.submitTime DESC';
-    const [rows]: any = await pool.query(query, params);
+    const [rows] = await pool.query(query, params);
 
-    const formatted = rows.map((r: any) => ({
+    const formatted = rows.map((r) => ({
       ...r,
       aadhar: r.student_code,
       studentAadhar: r.student_code,
@@ -160,17 +160,17 @@ router.get('/', requireAuth, async (req: Request, res: Response): Promise<any> =
     }));
 
     return res.json({ success: true, data: formatted });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error listing complaints:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // GET /api/complain/:id
-router.get('/:id', requireAuth, async (req: Request, res: Response): Promise<any> => {
+router.get('/:id', requireAuth, async (req, res) => {
   try {
-    const complainId = parseInt(req.params.id as string, 10);
-    const [rows]: any = await pool.query(`
+    const complainId = parseInt(req.params.id , 10);
+    const [rows] = await pool.query(`
       SELECT c.*, s.name AS student_name, s.student_code, s.phone_number, s.room_number,
              su.name AS solver_name
       FROM complains c
@@ -186,8 +186,8 @@ router.get('/:id', requireAuth, async (req: Request, res: Response): Promise<any
     const complaint = rows[0];
 
     // If standard student, verify ownership
-    if (!req.roles?.some(r => ['platform-admin', 'complain-solver', 'leader', 'wing-leader'].includes(r))) {
-      if (complaint.student_id !== (req.user?.student_id || req.student?.id)) {
+    if (!_optionalChain([req, 'access', _26 => _26.roles, 'optionalAccess', _27 => _27.some, 'call', _28 => _28(r => ['platform-admin', 'complain-solver', 'leader', 'wing-leader'].includes(r))])) {
+      if (complaint.student_id !== (_optionalChain([req, 'access', _29 => _29.user, 'optionalAccess', _30 => _30.student_id]) || _optionalChain([req, 'access', _31 => _31.student, 'optionalAccess', _32 => _32.id]))) {
         return res.status(403).json({ success: false, message: 'Forbidden' });
       }
     }
@@ -205,25 +205,25 @@ router.get('/:id', requireAuth, async (req: Request, res: Response): Promise<any
     };
 
     return res.json({ success: true, data: { ...formatted, complain: formatted } });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error getting complaint:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // PATCH & PUT /api/complain/:id (General update for status, response, review)
-const handleUpdateComplaint = async (req: Request, res: Response): Promise<any> => {
+const handleUpdateComplaint = async (req, res) => {
   try {
-    const complainId = parseInt(req.params.id as string, 10);
+    const complainId = parseInt(req.params.id , 10);
     const { status, response, review } = req.body;
 
-    const [existing]: any = await pool.query('SELECT * FROM complains WHERE id = ?', [complainId]);
+    const [existing] = await pool.query('SELECT * FROM complains WHERE id = ?', [complainId]);
     if (existing.length === 0) {
       return res.status(404).json({ success: false, message: 'Complaint not found' });
     }
 
-    const updateFields: string[] = [];
-    const params: any[] = [];
+    const updateFields = [];
+    const params = [];
 
     if (status !== undefined) {
       let dbStatus = status;
@@ -253,7 +253,7 @@ const handleUpdateComplaint = async (req: Request, res: Response): Promise<any> 
       await pool.query(`UPDATE complains SET ${updateFields.join(', ')} WHERE id = ?`, params);
     }
 
-    const [rows]: any = await pool.query(`
+    const [rows] = await pool.query(`
       SELECT c.*, s.name AS student_name, s.student_code, s.phone_number, s.room_number,
              su.name AS solver_name
       FROM complains c
@@ -276,7 +276,7 @@ const handleUpdateComplaint = async (req: Request, res: Response): Promise<any> 
     };
 
     return res.json({ success: true, data: { ...formatted, complain: formatted } });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error updating complaint:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
@@ -287,13 +287,13 @@ router.put('/:id', requireAuth, handleUpdateComplaint);
 
 
 // PATCH /api/complain/:id/solve (Complain-Solver or Admin marks as solved)
-router.patch('/:id/solve', requireAuth, requireRole('complain-solver', 'platform-admin'), async (req: Request, res: Response): Promise<any> => {
+router.patch('/:id/solve', requireAuth, requireRole('complain-solver', 'platform-admin'), async (req, res) => {
   try {
-    const complainId = parseInt(req.params.id as string, 10);
+    const complainId = parseInt(req.params.id , 10);
     const { response } = req.body;
-    const solverId = req.user?.staff_id || null;
+    const solverId = _optionalChain([req, 'access', _33 => _33.user, 'optionalAccess', _34 => _34.staff_id]) || null;
 
-    const [existing]: any = await pool.query('SELECT * FROM complains WHERE id = ?', [complainId]);
+    const [existing] = await pool.query('SELECT * FROM complains WHERE id = ?', [complainId]);
     if (existing.length === 0) {
       return res.status(404).json({ success: false, message: 'Complaint not found' });
     }
@@ -309,36 +309,36 @@ router.patch('/:id/solve', requireAuth, requireRole('complain-solver', 'platform
       [response || 'Issue resolved by staff', solverId, complainId]
     );
 
-    const [updated]: any = await pool.query('SELECT * FROM complains WHERE id = ?', [complainId]);
+    const [updated] = await pool.query('SELECT * FROM complains WHERE id = ?', [complainId]);
     return res.json({
       success: true,
       message: 'Complaint marked as solved. 24-hour verification window has begun for the student.',
       data: updated[0]
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error solving complaint:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // POST /api/complain/:id/feedback (Student feedback on solved complaint)
-router.post('/:id/feedback', requireAuth, async (req: Request, res: Response): Promise<any> => {
+router.post('/:id/feedback', requireAuth, async (req, res) => {
   try {
-    const complainId = parseInt(req.params.id as string, 10);
-    const studentId = req.user?.student_id || req.student?.id;
+    const complainId = parseInt(req.params.id , 10);
+    const studentId = _optionalChain([req, 'access', _35 => _35.user, 'optionalAccess', _36 => _36.student_id]) || _optionalChain([req, 'access', _37 => _37.student, 'optionalAccess', _38 => _38.id]);
     const { is_resolved, feedback, rating } = req.body;
 
     if (is_resolved === undefined) {
       return res.status(400).json({ success: false, message: 'is_resolved (boolean) is required' });
     }
 
-    const [rows]: any = await pool.query('SELECT * FROM complains WHERE id = ?', [complainId]);
+    const [rows] = await pool.query('SELECT * FROM complains WHERE id = ?', [complainId]);
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Complaint not found' });
     }
 
     const complaint = rows[0];
-    if (complaint.student_id !== studentId && !req.roles?.includes('platform-admin')) {
+    if (complaint.student_id !== studentId && !_optionalChain([req, 'access', _39 => _39.roles, 'optionalAccess', _40 => _40.includes, 'call', _41 => _41('platform-admin')])) {
       return res.status(403).json({ success: false, message: 'You can only provide feedback for your own complaints' });
     }
 
@@ -387,14 +387,14 @@ router.post('/:id/feedback', requireAuth, async (req: Request, res: Response): P
         message: 'Complaint reopened and set back to in_progress for solver re-inspection.'
       });
     }
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error submitting feedback:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // POST /api/complain/unlock-category (Platform-admin lifts a 24h category lock)
-router.post('/unlock-category', requireAuth, requireRole('platform-admin'), async (req: Request, res: Response): Promise<any> => {
+router.post('/unlock-category', requireAuth, requireRole('platform-admin'), async (req, res) => {
   try {
     const { student_id, category } = req.body;
     if (!student_id || !category) {
@@ -403,21 +403,21 @@ router.post('/unlock-category', requireAuth, requireRole('platform-admin'), asyn
 
     await pool.query(
       'UPDATE student_category_locks SET is_locked = FALSE, unlocked_at = NOW(), unlocked_by = ? WHERE student_id = ? AND category = ?',
-      [req.user?.staff_id || 1, student_id, category]
+      [_optionalChain([req, 'access', _42 => _42.user, 'optionalAccess', _43 => _43.staff_id]) || 1, student_id, category]
     );
 
     return res.json({ success: true, message: `Category "${category}" successfully unlocked for student ${student_id}.` });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error unlocking category:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // DELETE /api/complain/:id (Platform-Admin only)
-router.delete('/:id', requireAuth, requireRole('platform-admin'), async (req: Request, res: Response): Promise<any> => {
+router.delete('/:id', requireAuth, requireRole('platform-admin'), async (req, res) => {
   try {
-    const complainId = parseInt(req.params.id as string, 10);
-    const [rows]: any = await pool.query('SELECT * FROM complains WHERE id = ?', [complainId]);
+    const complainId = parseInt(req.params.id , 10);
+    const [rows] = await pool.query('SELECT * FROM complains WHERE id = ?', [complainId]);
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Complaint not found' });
     }
@@ -432,13 +432,13 @@ router.delete('/:id', requireAuth, requireRole('platform-admin'), async (req: Re
           if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
         }
       });
-    } catch (e: any) {
+    } catch (e) {
       console.warn('Could not clean up some image files:', e.message);
     }
 
     await pool.query('DELETE FROM complains WHERE id = ?', [complainId]);
     return res.json({ success: true, message: 'Complaint and associated images deleted' });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error deleting complaint:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
