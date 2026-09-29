@@ -5,7 +5,7 @@ const { verifyStudent, verifyFloorLeader, verifyAdminOrFloorLeader, verifyOperat
 const admin = require('../../config/firebase').default || require('../../config/firebase');
 const crypto = require('crypto');
 const axios = require('axios');
-const { getCurrentIST } = require('../../utils/time');
+const { getCurrentIST, getISTMinutes, getISTDateString } = require('../../utils/time');
 
 const SECRET_KEY = process.env.AES_SECRET_KEY || 'HAMS_SECRET_KEY!'; // Must be 16 bytes for AES-128
 
@@ -128,7 +128,7 @@ router.get('/my-status', verifyStudent, async (req, res) => {
     const [scheduleRows] = await pool.query(
       'SELECT session_key, session_name, icon_name, start_time, end_time FROM attendance_schedules WHERE is_active = TRUE ORDER BY start_time ASC'
     );
-    
+
     const allSchedules = scheduleRows.map(r => ({
       session_key: r.session_key,
       session_name: r.session_name,
@@ -141,19 +141,19 @@ router.get('/my-status', verifyStudent, async (req, res) => {
     for (const row of allSchedules) {
       schedules[row.session_key] = { start: row.start_time, end: row.end_time, name: row.session_name };
     }
-    
+
     const now = getCurrentIST();
     const sessionDate = now.toISOString().slice(0, 10);
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const nowMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
 
     let activeSession = null;
-    
+
     for (const sched of allSchedules) {
       const [startH, startM] = sched.start_time.split(':').map(Number);
       const [endH, endM] = sched.end_time.split(':').map(Number);
       const startMinutes = startH * 60 + startM;
       const endMinutes = endH * 60 + endM;
-      
+
       if (startMinutes > endMinutes) {
         // Overnight window (e.g. 22:30 to 06:00)
         if (nowMinutes >= startMinutes || nowMinutes <= endMinutes) {
@@ -181,7 +181,7 @@ router.get('/my-status', verifyStudent, async (req, res) => {
     const [studentRows] = await pool.query('SELECT student_code FROM students WHERE id = ?', [studentId]);
     if (studentRows.length > 0) {
       bankCode = studentRows[0].student_code;
-      
+
       if (attendanceActive && activeSessionType) {
         // Enforce Floor Leader Targets
         const [targetRows] = await pool.query(
@@ -199,7 +199,7 @@ router.get('/my-status', verifyStudent, async (req, res) => {
           }
         }
       }
-      
+
       if (activeSessionType) {
         // 1. Check local database first
         const [sessions] = await pool.query('SELECT id FROM attendance_sessions WHERE session_date = ? AND session_type = ?', [sessionDate, activeSessionType]);
@@ -289,16 +289,16 @@ router.get('/schedule', async (req, res) => {
 // ------------------------------------------------------------
 router.put('/schedule', verifyAdminOrFloorLeader, async (req, res) => {
   try {
-    const { 
-      startTime, 
-      endTime, 
-      type, 
-      lateTime, 
-      linkedSessionKey, 
-      autoMessage, 
-      autoMessageStudent, 
-      autoMessageParent, 
-      autoMessageTime 
+    const {
+      startTime,
+      endTime,
+      type,
+      lateTime,
+      linkedSessionKey,
+      autoMessage,
+      autoMessageStudent,
+      autoMessageParent,
+      autoMessageTime
     } = req.body;
     const sessionType = (type || 'night').toLowerCase();
 
@@ -337,10 +337,10 @@ router.put('/schedule', verifyAdminOrFloorLeader, async (req, res) => {
            auto_message = ?, auto_message_student = ?, auto_message_parent = ?, auto_message_time = ?, auto_message_audience = 'absent' 
        WHERE session_key = ?`,
       [
-        startTime, 
-        endTime, 
-        lateTime || null, 
-        linkedSessionKey || null, 
+        startTime,
+        endTime,
+        lateTime || null,
+        linkedSessionKey || null,
         (studentMsg && studentMsg.trim()) ? studentMsg.trim() : null,
         (studentMsg && studentMsg.trim()) ? studentMsg.trim() : null,
         (parentMsg && parentMsg.trim()) ? parentMsg.trim() : null,
@@ -444,14 +444,14 @@ router.post('/session/:session_key/send-absent-alerts', verifyAdminOrFloorLeader
     );
 
     const activeStudentTemplate = (
-      studentMessageTemplate !== undefined 
-        ? studentMessageTemplate 
+      studentMessageTemplate !== undefined
+        ? studentMessageTemplate
         : (messageTemplate !== undefined ? messageTemplate : (scheduleRows[0] && (scheduleRows[0].auto_message_student || scheduleRows[0].auto_message)))
     ) || '';
 
     const activeParentTemplate = (
-      parentMessageTemplate !== undefined 
-        ? parentMessageTemplate 
+      parentMessageTemplate !== undefined
+        ? parentMessageTemplate
         : (scheduleRows[0] && scheduleRows[0].auto_message_parent)
     ) || '';
 
@@ -477,7 +477,7 @@ router.post('/session/:session_key/send-absent-alerts', verifyAdminOrFloorLeader
       for (const tr of targetRows) {
         let sids = tr.student_ids;
         if (typeof sids === 'string') {
-          try { sids = JSON.parse(sids); } catch(e) { sids = []; }
+          try { sids = JSON.parse(sids); } catch (e) { sids = []; }
         }
         if (Array.isArray(sids)) {
           assignedStudentIds.push(...sids.map(id => String(id).trim()));
@@ -638,7 +638,7 @@ router.get('/debug-reports', async (req, res) => {
   try {
     const [res1] = await pool.query('DESCRIBE attendance_records');
     const [res2] = await pool.query('DESCRIBE attendance_sessions');
-    
+
     // Test the actual query too
     let err1 = null;
     let counts = null;
@@ -649,7 +649,7 @@ router.get('/debug-reports', async (req, res) => {
         GROUP BY session_type
       `);
       counts = sessionCounts;
-    } catch(e) { err1 = e.toString(); }
+    } catch (e) { err1 = e.toString(); }
 
     return res.json({ success: true, records: res1, sessions: res2, err1, counts });
   } catch (e) {
@@ -688,37 +688,42 @@ router.post('/mark', verifyStudent, async (req, res) => {
     const [scheduleRows] = await pool.query(
       'SELECT session_key, start_time, end_time, linked_session_key, late_time FROM attendance_schedules WHERE is_active = TRUE'
     );
-    
+
     const schedules = {};
     for (const row of scheduleRows) {
       schedules[row.session_key] = { start: row.start_time, end: row.end_time };
     }
 
     const now = getCurrentIST();
+    const nowMinutes = typeof getISTMinutes === 'function' ? getISTMinutes() : (now.getHours() * 60 + now.getMinutes());
+    const sessionDate = typeof getISTDateString === 'function' ? getISTDateString() : now.toISOString().slice(0, 10);
     let activeSessionType = null;
     let startDt = null;
     let endDt = null;
-    
+    const requestedType = (req.body.session_type || req.body.type || '').toString().toLowerCase();
+
     for (const [type, times] of (Object.entries(schedules) as [string, any][])) {
       const [startH, startM] = times.start.split(':').map(Number);
       const [endH, endM] = times.end.split(':').map(Number);
-      const currentStartDt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), startH, startM, 0));
-      const currentEndDt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), endH, endM, 0));
-      
-      if (currentStartDt.getTime() > currentEndDt.getTime()) {
-        if (now >= currentStartDt || now <= currentEndDt) {
-          activeSessionType = type;
-          startDt = currentStartDt;
-          endDt = currentEndDt;
-          break;
+      const startMinutes = startH * 60 + startM;
+      const endMinutes = endH * 60 + endM;
+
+      let isMatch = false;
+      if (startMinutes > endMinutes) {
+        if (nowMinutes >= startMinutes || nowMinutes <= endMinutes) {
+          isMatch = true;
         }
       } else {
-        if (now >= currentStartDt && now <= currentEndDt) {
-          activeSessionType = type;
-          startDt = currentStartDt;
-          endDt = currentEndDt;
-          break;
+        if (nowMinutes >= startMinutes && nowMinutes <= endMinutes) {
+          isMatch = true;
         }
+      }
+
+      if (isMatch || (requestedType && type.toLowerCase() === requestedType)) {
+        activeSessionType = type;
+        startDt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), startH, startM, 0));
+        endDt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), endH, endM, 0));
+        if (isMatch) break;
       }
     }
 
@@ -773,8 +778,6 @@ router.post('/mark', verifyStudent, async (req, res) => {
       return res.status(403).json({ success: false, code: 'WEAK_SIGNAL', message: 'Move closer to the classroom device' });
     }
 
-    const sessionDate = now.toISOString().slice(0, 10);
-
     let [sessions] = await pool.query(
       `SELECT id FROM attendance_sessions WHERE session_date = ? AND session_type = ?`,
       [sessionDate, activeSessionType]
@@ -818,24 +821,24 @@ router.post('/mark', verifyStudent, async (req, res) => {
     const activeSchedule = scheduleRows.find(r => r.session_key === activeSessionType);
     let isLate = false;
     if (activeSchedule && activeSchedule.late_time) {
-       const [lateH, lateM] = activeSchedule.late_time.split(':').map(Number);
-       let lateDt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), lateH, lateM, 0));
-       // Handle cross-midnight late times (e.g., if late_time is 01:00 and now is 23:30)
-       if (startDt.getTime() > endDt.getTime() && now.getUTCHours() > 12 && lateH < 12) {
-          lateDt.setUTCDate(lateDt.getUTCDate() + 1);
-       }
-       if (now > lateDt) {
-          isLate = true;
-          // Check how many times they've been late this month
-          const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-          const [lateCountRes] = await pool.query(
-             "SELECT COUNT(*) as count FROM attendance_records WHERE TRIM(LEADING '0' FROM bank_code) = TRIM(LEADING '0' FROM ?) AND is_late = TRUE AND marked_at >= ?",
-             [bankCode, monthStart]
-          );
-          if (lateCountRes[0].count >= 10) {
-             return res.status(403).json({ success: false, code: 'LATE_LIMIT_EXCEEDED', message: 'You have exceeded the maximum allowed late days this month (10).' });
-          }
-       }
+      const [lateH, lateM] = activeSchedule.late_time.split(':').map(Number);
+      let lateDt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), lateH, lateM, 0));
+      // Handle cross-midnight late times (e.g., if late_time is 01:00 and now is 23:30)
+      if (startDt.getTime() > endDt.getTime() && now.getUTCHours() > 12 && lateH < 12) {
+        lateDt.setUTCDate(lateDt.getUTCDate() + 1);
+      }
+      if (now > lateDt) {
+        isLate = true;
+        // Check how many times they've been late this month
+        const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+        const [lateCountRes] = await pool.query(
+          "SELECT COUNT(*) as count FROM attendance_records WHERE TRIM(LEADING '0' FROM bank_code) = TRIM(LEADING '0' FROM ?) AND is_late = TRUE AND marked_at >= ?",
+          [bankCode, monthStart]
+        );
+        if (lateCountRes[0].count >= 10) {
+          return res.status(403).json({ success: false, code: 'LATE_LIMIT_EXCEEDED', message: 'You have exceeded the maximum allowed late days this month (10).' });
+        }
+      }
     }
 
     // Store in local MySQL DB
@@ -847,26 +850,26 @@ router.post('/mark', verifyStudent, async (req, res) => {
 
     // --- Linked Session Logic ---
     if (activeSchedule && activeSchedule.linked_session_key) {
-        let [linkedSessions] = await pool.query(
-          `SELECT id FROM attendance_sessions WHERE session_date = ? AND session_type = ?`,
-          [sessionDate, activeSchedule.linked_session_key]
+      let [linkedSessions] = await pool.query(
+        `SELECT id FROM attendance_sessions WHERE session_date = ? AND session_type = ?`,
+        [sessionDate, activeSchedule.linked_session_key]
+      );
+      let linkedSessionId;
+      if (linkedSessions.length === 0) {
+        const [result] = await pool.query(
+          `INSERT INTO attendance_sessions (session_date, starts_at, ends_at, session_type) VALUES (?, ?, ?, ?)`,
+          [sessionDate, startDt, endDt, activeSchedule.linked_session_key]
         );
-        let linkedSessionId;
-        if (linkedSessions.length === 0) {
-          const [result] = await pool.query(
-            `INSERT INTO attendance_sessions (session_date, starts_at, ends_at, session_type) VALUES (?, ?, ?, ?)`,
-            [sessionDate, startDt, endDt, activeSchedule.linked_session_key]
-          );
-          linkedSessionId = result.insertId;
-        } else {
-          linkedSessionId = linkedSessions[0].id;
-        }
-        
-        await pool.query(
-          `INSERT IGNORE INTO attendance_records (session_id, bank_code, student_name, floor_id, device_uuid, rssi, ble_token_used, is_late)
+        linkedSessionId = result.insertId;
+      } else {
+        linkedSessionId = linkedSessions[0].id;
+      }
+
+      await pool.query(
+        `INSERT IGNORE INTO attendance_records (session_id, bank_code, student_name, floor_id, device_uuid, rssi, ble_token_used, is_late)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [linkedSessionId, bankCode, studentName, floorId, 'NA', rssi, 'LINKED_AUTO', false]
-        );
+        [linkedSessionId, bankCode, studentName, floorId, 'NA', rssi, 'LINKED_AUTO', false]
+      );
     }
 
     console.log(`[INFO] Attendance marked successfully for ${bankCode}.`);
@@ -891,11 +894,11 @@ router.post('/manual-mark', verifyOperator, async (req, res) => {
     let studentId = null;
     let floorId = 0;
     let studentName = req.body.student_name || 'Unknown';
-    
+
     // Default floor extraction from room string (e.g. "913" -> 9)
     if (req.body.room) {
-        const match = req.body.room.toString().match(/^(\d)/);
-        if (match) floorId = parseInt(match[1], 10);
+      const match = req.body.room.toString().match(/^(\d)/);
+      if (match) floorId = parseInt(match[1], 10);
     }
 
     const [students] = await pool.query('SELECT id, student_code, name, floor_id, is_active FROM students WHERE CAST(student_code AS UNSIGNED) = CAST(? AS UNSIGNED)', [bank_code]);
@@ -909,7 +912,7 @@ router.post('/manual-mark', verifyOperator, async (req, res) => {
       }
     } else {
       const [insertRes] = await pool.query(
-        'INSERT INTO students (student_code, name, is_active, floor_id) VALUES (?, ?, 1, ?)', 
+        'INSERT INTO students (student_code, name, is_active, floor_id) VALUES (?, ?, 1, ?)',
         [bank_code, studentName, floorId]
       );
       studentId = insertRes.insertId;
@@ -919,7 +922,7 @@ router.post('/manual-mark', verifyOperator, async (req, res) => {
     const [scheduleRows] = await pool.query(
       'SELECT session_key, start_time, end_time FROM attendance_schedules WHERE is_active = TRUE'
     );
-    
+
     const schedules = {};
     for (const row of scheduleRows) {
       schedules[row.session_key] = { start: row.start_time, end: row.end_time };
@@ -929,7 +932,7 @@ router.post('/manual-mark', verifyOperator, async (req, res) => {
     let activeSessionType = null;
     let startDt = null;
     let endDt = null;
-    
+
     if (session_key && schedules[session_key]) {
       // Operator selected a specific session
       activeSessionType = session_key;
@@ -945,7 +948,7 @@ router.post('/manual-mark', verifyOperator, async (req, res) => {
         const [endH, endM] = times.end.split(':').map(Number);
         const currentStartDt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), startH, startM, 0));
         const currentEndDt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), endH, endM, 0));
-        
+
         if (currentStartDt.getTime() > currentEndDt.getTime()) {
           if (now >= currentStartDt || now <= currentEndDt) {
             activeSessionType = type;
@@ -1000,22 +1003,22 @@ router.post('/manual-mark', verifyOperator, async (req, res) => {
     const activeSchedule = scheduleRows.find(r => r.session_key === activeSessionType);
     let isLate = false;
     if (activeSchedule && activeSchedule.late_time) {
-       const [lateH, lateM] = activeSchedule.late_time.split(':').map(Number);
-       let lateDt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), lateH, lateM, 0));
-       if (startDt.getTime() > endDt.getTime() && now.getUTCHours() > 12 && lateH < 12) {
-          lateDt.setUTCDate(lateDt.getUTCDate() + 1);
-       }
-       if (now > lateDt) {
-          isLate = true;
-          const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-          const [lateCountRes] = await pool.query(
-             "SELECT COUNT(*) as count FROM attendance_records WHERE TRIM(LEADING '0' FROM bank_code) = TRIM(LEADING '0' FROM ?) AND is_late = TRUE AND marked_at >= ?",
-             [bank_code, monthStart]
-          );
-          if (lateCountRes[0].count >= 10) {
-             return res.status(403).json({ success: false, code: 'LATE_LIMIT_EXCEEDED', message: 'Student exceeded the maximum allowed late days this month (10).' });
-          }
-       }
+      const [lateH, lateM] = activeSchedule.late_time.split(':').map(Number);
+      let lateDt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), lateH, lateM, 0));
+      if (startDt.getTime() > endDt.getTime() && now.getUTCHours() > 12 && lateH < 12) {
+        lateDt.setUTCDate(lateDt.getUTCDate() + 1);
+      }
+      if (now > lateDt) {
+        isLate = true;
+        const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+        const [lateCountRes] = await pool.query(
+          "SELECT COUNT(*) as count FROM attendance_records WHERE TRIM(LEADING '0' FROM bank_code) = TRIM(LEADING '0' FROM ?) AND is_late = TRUE AND marked_at >= ?",
+          [bank_code, monthStart]
+        );
+        if (lateCountRes[0].count >= 10) {
+          return res.status(403).json({ success: false, code: 'LATE_LIMIT_EXCEEDED', message: 'Student exceeded the maximum allowed late days this month (10).' });
+        }
+      }
     }
 
     // 4. Insert record
@@ -1027,26 +1030,26 @@ router.post('/manual-mark', verifyOperator, async (req, res) => {
 
     // --- Linked Session Logic ---
     if (activeSchedule && activeSchedule.linked_session_key) {
-        let [linkedSessions] = await pool.query(
-          `SELECT id FROM attendance_sessions WHERE session_date = ? AND session_type = ?`,
-          [sessionDate, activeSchedule.linked_session_key]
+      let [linkedSessions] = await pool.query(
+        `SELECT id FROM attendance_sessions WHERE session_date = ? AND session_type = ?`,
+        [sessionDate, activeSchedule.linked_session_key]
+      );
+      let linkedSessionId;
+      if (linkedSessions.length === 0) {
+        const [result] = await pool.query(
+          `INSERT INTO attendance_sessions (session_date, starts_at, ends_at, session_type) VALUES (?, ?, ?, ?)`,
+          [sessionDate, startDt, endDt, activeSchedule.linked_session_key]
         );
-        let linkedSessionId;
-        if (linkedSessions.length === 0) {
-          const [result] = await pool.query(
-            `INSERT INTO attendance_sessions (session_date, starts_at, ends_at, session_type) VALUES (?, ?, ?, ?)`,
-            [sessionDate, startDt, endDt, activeSchedule.linked_session_key]
-          );
-          linkedSessionId = result.insertId;
-        } else {
-          linkedSessionId = linkedSessions[0].id;
-        }
-        
-        await pool.query(
-          `INSERT IGNORE INTO attendance_records (session_id, bank_code, student_name, floor_id, device_uuid, rssi, ble_token_used, is_late)
+        linkedSessionId = result.insertId;
+      } else {
+        linkedSessionId = linkedSessions[0].id;
+      }
+
+      await pool.query(
+        `INSERT IGNORE INTO attendance_records (session_id, bank_code, student_name, floor_id, device_uuid, rssi, ble_token_used, is_late)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [linkedSessionId, bank_code, studentName, floorId, 'MANUAL', 0, 'LINKED_AUTO_MANUAL', false]
-        );
+        [linkedSessionId, bank_code, studentName, floorId, 'MANUAL', 0, 'LINKED_AUTO_MANUAL', false]
+      );
     }
 
     // Call External Apps Script Webhook asynchronously
@@ -1382,7 +1385,7 @@ const handleManualMark = async (req, res) => {
         'DELETE FROM attendance_absent_reasons WHERE student_id = ? AND session_date = ? AND LOWER(session_type) = LOWER(?)',
         [student.id, sDate, sKey]
       );
-    } catch(e) {}
+    } catch (e) { }
 
     return res.status(200).json({
       success: true,
@@ -1419,7 +1422,7 @@ router.get('/session/:type/targets', verifyAdminOrFloorLeader, async (req, res) 
     const formatted = rows.map(r => {
       let sids = r.student_ids;
       if (typeof sids === 'string') {
-        try { sids = JSON.parse(sids); } catch(e) { sids = []; }
+        try { sids = JSON.parse(sids); } catch (e) { sids = []; }
       }
       return {
         floor_id: r.floor_id,
@@ -1472,7 +1475,7 @@ router.get('/session/:type/students', verifyAdminOrFloorLeader, async (req, res)
   try {
     const sessionType = req.params.type.toLowerCase();
     const sessionDate = req.query.date || new Date().toISOString().slice(0, 10);
-    
+
     // Check if session is for all students
     const [scheduleRows] = await pool.query('SELECT is_for_all_students FROM attendance_schedules WHERE session_key = ?', [sessionType]);
     const isForAll = scheduleRows.length === 0 || scheduleRows[0].is_for_all_students === 1 || scheduleRows[0].is_for_all_students === true;
@@ -1480,7 +1483,7 @@ router.get('/session/:type/students', verifyAdminOrFloorLeader, async (req, res)
     let floorCondition = '';
     let targetCondition = '';
     let params = [sessionDate, sessionType, sessionDate, sessionType];
-    
+
     if (req.leader) {
       const leaderFloors = Array.isArray(req.leader.assigned_floors) && req.leader.assigned_floors.length > 0
         ? req.leader.assigned_floors.map(f => parseInt(f, 10))
@@ -1497,7 +1500,7 @@ router.get('/session/:type/students', verifyAdminOrFloorLeader, async (req, res)
       for (const tr of targetRows) {
         let sids = tr.student_ids;
         if (typeof sids === 'string') {
-          try { sids = JSON.parse(sids); } catch(e) { sids = []; }
+          try { sids = JSON.parse(sids); } catch (e) { sids = []; }
         }
         if (Array.isArray(sids)) {
           assignedStudentIds.push(...sids.map(id => String(id).trim()));
@@ -1547,7 +1550,7 @@ router.get('/session/:type/students', verifyAdminOrFloorLeader, async (req, res)
         description: tr.description
       });
     }
-    
+
     const formattedRows = rows.map(r => {
       const isPresent = Boolean(r.is_present && r.is_present !== 0 && r.is_present !== '0');
       const isLate = Boolean(r.is_late && r.is_late !== 0 && r.is_late !== '0');
@@ -1575,7 +1578,7 @@ router.get('/session/:type/absent-reasons', verifyAdminOrFloorLeader, async (req
   try {
     const sessionType = req.params.type.toLowerCase();
     const sessionDate = req.query.date || new Date().toISOString().slice(0, 10);
-    
+
     // Check if session is for all students
     const [scheduleRows] = await pool.query('SELECT is_for_all_students FROM attendance_schedules WHERE session_key = ?', [sessionType]);
     const isForAll = scheduleRows.length === 0 || scheduleRows[0].is_for_all_students === 1 || scheduleRows[0].is_for_all_students === true;
@@ -1583,7 +1586,7 @@ router.get('/session/:type/absent-reasons', verifyAdminOrFloorLeader, async (req
     let floorCondition = '';
     let targetCondition = '';
     let params = [sessionDate, sessionType, sessionDate, sessionType];
-    
+
     if (req.leader) {
       const leaderFloors = Array.isArray(req.leader.assigned_floors) && req.leader.assigned_floors.length > 0
         ? req.leader.assigned_floors.map(f => parseInt(f, 10))
@@ -1600,7 +1603,7 @@ router.get('/session/:type/absent-reasons', verifyAdminOrFloorLeader, async (req
       for (const tr of targetRows) {
         let sids = tr.student_ids;
         if (typeof sids === 'string') {
-          try { sids = JSON.parse(sids); } catch(e) { sids = []; }
+          try { sids = JSON.parse(sids); } catch (e) { sids = []; }
         }
         if (Array.isArray(sids)) {
           assignedStudentIds.push(...sids.map(id => String(id).trim()));
@@ -1687,11 +1690,11 @@ router.post('/session/absent-reason', verifyAdminOrFloorLeader, async (req, res)
       VALUES (?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE reason = VALUES(reason), is_justified = VALUES(is_justified), created_at = CURRENT_TIMESTAMP
     `;
-    
+
     for (const d of targetDates) {
       await pool.query(query, [d, sKey, sid, reasonText, is_justified !== false ? 1 : 0]);
     }
-    
+
     return res.json({ success: true, message: 'Absence justification saved successfully' });
   } catch (err) {
     console.error('Error saving absent reason:', err);
